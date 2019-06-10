@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import os
+from collections import OrderedDict
 from typing import TYPE_CHECKING, List, Any, Optional
 
 from iconcommons.logger import Logger
@@ -25,7 +26,7 @@ from .base.exception import ExceptionCode, IconServiceBaseException, ScoreNotFou
     AccessDeniedException, IconScoreException, InvalidParamsException, IllegalFormatException
 from .base.message import Message
 from .base.transaction import Transaction
-from .database.batch import BlockBatch, TransactionBatch
+from .database.batch import BlockBatch, TransactionBatch, digest
 from .database.factory import ContextDatabaseFactory
 from .deploy.icon_builtin_score_loader import IconBuiltinScoreLoader
 from .deploy.icon_score_deploy_engine import IconScoreDeployEngine
@@ -325,7 +326,6 @@ class IconServiceEngine(ContextContainer):
                block: 'Block',
                tx_requests: list,
                prev_block_contributors: dict = None) -> tuple:
-
         """Process transactions in a block sent by loopchain
 
         :param block:
@@ -379,11 +379,25 @@ class IconServiceEngine(ContextContainer):
                 precommit_flag = self._generate_precommit_flag(precommit_flag, tx_result)
                 self._update_step_properties_if_necessary(context, precommit_flag)
 
+        preps: list = []
         if self._check_update_prep_next_block_height(context, block.height):
+            prepsRootHash = OrderedDict()
+            PREPS_ROOT_HASH = 0x0
             self._put_next_prep_block_height(context, block.height)
             self._prep_candidate_engine.update_preps_from_variable()
             preps = self._prep_candidate_engine.get_preps()
-            main_preps = preps[:22]
+
+            for idx, prep in enumerate(preps):
+                buf_prep_as_dict = OrderedDict()
+                address = prep.to_list()[1]
+                buf_prep = self._prep_candidate_engine.get_candidate(address)
+                buf_prep_as_dict['ip'] = buf_prep.ip
+                buf_prep_as_dict['publicKey'] = buf_prep.publicKey
+                buf_prep_as_dict['p2pEndPoint'] = buf_prep.p2pEndPoint
+                preps[idx] = buf_prep_as_dict
+
+            prepsRootHash["preps"] = preps
+            prepsRootHash["prepsState"] = PREPS_ROOT_HASH
 
         # Save precommit data
         # It will be written to levelDB on commit
@@ -394,10 +408,14 @@ class IconServiceEngine(ContextContainer):
             context.prep_candidate_block_batch,
             prev_block_contributors,
             context.new_icon_score_mapper,
-            precommit_flag)
+            precommit_flag
+        )
         self._precommit_data_manager.push(precommit_data)
 
-        return block_result, precommit_data.state_root_hash
+        if len(preps) == 0:
+            return block_result, precommit_data.state_root_hash
+        else:
+            return block_result, precommit_data.state_root_hash, preps, digest(prepsRootHash), PREPS_ROOT_HASH
 
     def _update_revision_if_necessary(self,
                                       flags: 'PrecommitFlag',

@@ -172,6 +172,9 @@ class CandidateEngine(object):
     def is_candidate(self, context: 'IconScoreContext', address: 'Address') -> bool:
         return self._storage.is_candidate(context, address)
 
+    def get_candidate(self, context: 'IconScoreContext', address: 'Address') -> Candidate:
+        return self._storage.get_candidate(context, address)
+
     def get_gv(self, context: 'IconScoreContext') -> 'GovernanceVariable':
         return self._variable.get_gv(context)
 
