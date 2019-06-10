@@ -28,6 +28,7 @@ class VariableStorage(object):
     GOVERNANCE_VARIABLE_KEY: bytes = PREFIX + b'gv'
     PREPS_KEY: bytes = PREFIX + b'preps'
     PREP_PERIOD_KEY: bytes = PREFIX + b'period'
+    PREP_NEXT_BLOCK_HEIGHT_KEY: bytes = PREFIX + b'pnbh'
 
     def __init__(self, db: 'ContextDatabase'):
         """Constructor
@@ -65,6 +66,15 @@ class VariableStorage(object):
 
     def get_prep_period(self, context: 'IconScoreContext') -> int:
         value: bytes = self._db.get(context, self.PREP_PERIOD_KEY)
+        if value:
+            return PrepPeriod.from_bytes(value)
+        return 0
+
+    def put_prep_next_block_height(self, context: 'IconScoreContext', prep_block_height: int):
+        self._db.put(context, self.PREP_NEXT_BLOCK_HEIGHT_KEY, PrepPeriod(prep_block_height).to_bytes())
+
+    def get_prep_next_block_height(self, context: 'IconScoreContext') -> int:
+        value: bytes = self._db.get(context, self.PREP_NEXT_BLOCK_HEIGHT_KEY)
         if value:
             return PrepPeriod.from_bytes(value)
         return 0

@@ -203,3 +203,7 @@ class CandidateEngine(object):
     @property
     def prep_infos_dirty_include_sub_prep(self) -> bool:
         return self._prep_infos_dirty_include_sub_prep
+
+    @property
+    def variable(self):
+        return self._variable

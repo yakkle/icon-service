@@ -379,6 +379,12 @@ class IconServiceEngine(ContextContainer):
                 precommit_flag = self._generate_precommit_flag(precommit_flag, tx_result)
                 self._update_step_properties_if_necessary(context, precommit_flag)
 
+        if self._check_update_prep_next_block_height(context, block.height):
+            self._put_next_prep_block_height(context, block.height)
+            self._prep_candidate_engine.update_preps_from_variable()
+            preps = self._prep_candidate_engine.get_preps()
+            main_preps = preps[:22]
+
         # Save precommit data
         # It will be written to levelDB on commit
         precommit_data = PrecommitData(
@@ -1357,3 +1363,15 @@ class IconServiceEngine(ContextContainer):
             return self._precommit_data_manager.last_block
 
         return None
+
+    def _check_update_prep_next_block_height(self, context: 'IconScoreContext', cur_block_height: int) -> bool:
+        next_block_height: int = self._prep_candidate_engine.variable.get_prep_next_block_height(context)
+        if next_block_height == 0:
+            return False
+        return cur_block_height == next_block_height
+
+    def _put_next_prep_block_height(self, context: 'IconScoreContext', cur_block_height: int):
+        prep_period: int = self._prep_candidate_engine.variable.get_prep_period(context)
+        if prep_period == 0:
+            raise InvalidParamsException("Fail put next prep block height: didn't init yet")
+        self._prep_candidate_engine.variable.put(context, cur_block_height + prep_period)

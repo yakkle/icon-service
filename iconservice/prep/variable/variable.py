@@ -58,8 +58,15 @@ class Variable(object):
             return []
         return value.preps
 
-    def put_prep_period(self, context: 'IconScoreContext', pre_period: int):
-        self._storage.put_prep_period(context, pre_period)
+    def put_prep_period(self, context: 'IconScoreContext', prep_period: int):
+        self._storage.put_prep_period(context, prep_period)
 
     def get_prep_period(self, context: 'IconScoreContext') -> int:
         return self._storage.get_prep_period(context)
+
+    def put_prep_next_block_height(self, context: 'IconScoreContext', prep_block_height: int):
+        self._storage.put_prep_next_block_height(context, prep_block_height)
+
+    def get_prep_next_block_height(self, context: 'IconScoreContext') -> int:
+        return self._storage.get_prep_next_block_height(context)
+
