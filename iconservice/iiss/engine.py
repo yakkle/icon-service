@@ -18,6 +18,8 @@ from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, List, Dict, Tuple, Union
 
 from iconcommons.logger import Logger
+
+from iconservice.prep.data import PRep
 from .reward_calc.data_creator import DataCreator as RewardCalcDataCreator
 from .reward_calc.ipc.message import CalculateResponse, VersionResponse
 from .reward_calc.ipc.reward_calc_proxy import RewardCalcProxy
@@ -44,7 +46,6 @@ if TYPE_CHECKING:
     from ..icx import IcxStorage
     from ..prep.term import Term
 
-
 _TAG = IISS_LOG_TAG
 
 
@@ -69,7 +70,8 @@ class Engine(EngineBase):
         self._invoke_handlers: dict = {
             'setStake': self.handle_set_stake,
             'setDelegation': self.handle_set_delegation,
-            'claimIScore': self.handle_claim_iscore
+            'claimIScore': self.handle_claim_iscore,
+            'payFine': self.handle_pay_fine
         }
 
         self._query_handler: dict = {
@@ -462,6 +464,46 @@ class Engine(EngineBase):
         }
 
         return data
+
+    def handle_pay_fine(self, context: 'IconScoreContext', params: dict):
+        ret_params: dict = TypeConverter.convert(params, ParamType.IISS_PAY_FINE)
+        clear: bool = ret_params.get(ConstantKeys.CLEAR, True)
+
+        self._pay_fine(context, clear)
+
+    def _pay_fine(self, context: 'IconScoreContext', clear: bool):
+        # get delegation list of iconist
+        iconist_account: 'Account' = context.storage.icx.get_account(context, context.msg.sender, Intent.ALL)
+        delegation_list = iconist_account.delegations
+
+        total_fine: int = 0
+        for address, delegation_amount in delegation_list:
+            prep: Optional['PRep'] = context.engine.prep.preps.get_by_address(address)
+            # todo: tx index도 남겨야 한다.
+            if prep.slashed_block_height >= iconist_account.delegation_part.updated_block_height:
+                if prep.slashed_tx_index >= iconist_account.delegation_part.updated_tx_index:
+                    fine: int = int(delegation_amount * 0.06)
+                    total_fine += fine
+                    if clear:
+
+                        pass
+                    else:
+                        pass
+                    # update delegation related value
+
+        # update stake related value
+
+        # update updated_block_height and tx_index
+
+        # mapping, and check diff of data
+
+        # update delegation list, amount, stake amount, total supply
+
+        # Put updated delegation data to rcDB
+
+        # update the data
+
+        pass
 
     @classmethod
     def _iscore_to_icx(cls, iscore: int) -> int:

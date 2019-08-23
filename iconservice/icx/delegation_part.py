@@ -36,6 +36,9 @@ class DelegationPart(BasePart):
         self._delegations: List[List['Address', int], ...] = delegations
         self._delegated_amount: int = delegated_amount
         self._delegations_amount: int = self._update_delegations_amount(delegations)
+        # todo : temp interface
+        self.updated_block_height = None
+        self.updated_tx_index = None
 
     @staticmethod
     def make_key(address: 'Address'):

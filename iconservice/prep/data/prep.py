@@ -160,11 +160,15 @@ class PRep(Sortable):
         # registration time
         self._block_height: int = block_height
         self._tx_index: int = tx_index
+        # todo : temp interface
+        self.slashed_block_height: int = None
+        self.slashed_tx_index: int = None
 
         # stats
         self._total_blocks: int = total_blocks
         self._validated_blocks: int = validated_blocks
         self._unvalidated_sequence_blocks: int = unvalidated_sequence_blocks
+
 
     def is_dirty(self) -> bool:
         return utils.is_flag_on(self._flags, PRepFlag.DIRTY)
