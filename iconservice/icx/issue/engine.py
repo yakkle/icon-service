@@ -15,6 +15,7 @@
 
 from typing import TYPE_CHECKING, Tuple, Optional
 
+from ...icx import Intent
 from .issue_formula import IssueFormula
 from .regulator import Regulator
 from ... import ZERO_SCORE_ADDRESS
@@ -123,6 +124,26 @@ class Engine(EngineBase):
                                        score_address=ZERO_SCORE_ADDRESS,
                                        event_signature="ICXBurned",
                                        arguments=[amount],
+                                       indexed_args_count=0)
+
+    @staticmethod
+    def burn_staked_icx(context: 'IconScoreContext', address: 'Address', amount: int):
+        account: 'Account' = context.storage.icx.get_account(context, address, Intent.STAKE)
+        total_stake: int = context.storage.iiss.get_total_stake(context)
+        current_total_supply: int = context.storage.icx.get_total_supply(context)
+
+        account.subtract_stake(amount)
+        total_stake -= amount
+        burned_total_supply: int = current_total_supply - amount
+
+        context.storage.icx.put_account(context, account)
+        context.storage.iiss.put_total_stake(context, total_stake)
+        context.storage.icx.put_total_supply(context, burned_total_supply)
+
+        EventLogEmitter.emit_event_log(context,
+                                       score_address=ZERO_SCORE_ADDRESS,
+                                       event_signature="StakedICXBurned",
+                                       arguments=[address, amount],
                                        indexed_args_count=0)
 
     def get_limit_inflation_beta(self, expected_irep: int) -> int:

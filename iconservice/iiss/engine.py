@@ -408,6 +408,7 @@ class Engine(EngineBase):
 
         # Save changed accounts to stateDB
         for account, delegated_offset in cached_accounts.values():
+            # todo: update delegated amount를 써야 되는 것 아님?
             if delegated_offset != 0:
                 account.delegation_part.delegated_amount += delegated_offset
 
@@ -471,39 +472,52 @@ class Engine(EngineBase):
 
         self._pay_fine(context, clear)
 
+    @staticmethod
+    def _check_if_pay_fine(iconist_account: 'Account', prep: 'PRep') -> bool:
+        # todo: 둘 다 업데이트 한 이력이 없을 때의 처리
+        if (prep.slashed_block_height > iconist_account.delegation_part.updated_block_height) or \
+                (prep.slashed_block_height == iconist_account.delegation_part.updated_block_height and
+                 prep.slashed_tx_index > iconist_account.delegation_part.updated_tx_index):
+            return True
+        return False
+
     def _pay_fine(self, context: 'IconScoreContext', clear: bool):
         # get delegation list of iconist
-        iconist_account: 'Account' = context.storage.icx.get_account(context, context.msg.sender, Intent.ALL)
+        iconist_account: 'Account' = context.storage.icx.get_account(context, context.tx.origin, Intent.ALL)
         delegation_list = iconist_account.delegations
+        new_delegations: List[Tuple['Address', int]] = []
+        cached_accounts: Dict['Address', Tuple['Account', int]] = {iconist_account.address: (iconist_account, 0)}
 
         total_fine: int = 0
         for address, delegation_amount in delegation_list:
             prep: Optional['PRep'] = context.engine.prep.preps.get_by_address(address)
-            # todo: tx index도 남겨야 한다.
-            if prep.slashed_block_height >= iconist_account.delegation_part.updated_block_height:
-                if prep.slashed_tx_index >= iconist_account.delegation_part.updated_tx_index:
-                    fine: int = int(delegation_amount * 0.06)
-                    total_fine += fine
-                    if clear:
-
-                        pass
-                    else:
-                        pass
-                    # update delegation related value
-
-        # update stake related value
-
-        # update updated_block_height and tx_index
-
-        # mapping, and check diff of data
-
+            if self._check_if_pay_fine(iconist_account, prep):
+                slashed_prep_account: 'Account' = context.storage.icx.get_account(context, address, Intent.DELEGATED)
+                fine: int = int(delegation_amount * 0.06)
+                offset: int = -fine
+                total_fine += fine
+                if clear:
+                    cached_accounts[slashed_prep_account.address] = slashed_prep_account, 0
+                else:
+                    new_delegations.append((address, delegation_amount + offset))
+                    cached_accounts[slashed_prep_account.address] = slashed_prep_account, offset
+                # todo: eventlog
+            else:
+                new_delegations.append((address, delegation_amount))
         # update delegation list, amount, stake amount, total supply
+        updated_accounts: List['Account'] = self._put_delegation_to_state_db(context,
+                                                                             iconist_account.address,
+                                                                             new_delegations,
+                                                                             cached_accounts)
+        context.engine.issue.burn_staked_icx(context, iconist_account.address, total_fine)
 
-        # Put updated delegation data to rcDB
+        # todo: update updated_block_height and tx_index
 
-        # update the data
+        self._put_delegation_to_rc_db(context, iconist_account.address, new_delegations)
 
-        pass
+        for listener in self._listeners:
+            listener.on_set_delegation(context, updated_accounts)
+            listener.on_set_stake(context, iconist_account)
 
     @classmethod
     def _iscore_to_icx(cls, iscore: int) -> int:

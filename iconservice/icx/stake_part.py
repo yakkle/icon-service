@@ -73,6 +73,15 @@ class StakePart(BasePart):
         self._stake += value
         self.set_dirty(True)
 
+    def subtract_stake(self, value: int):
+        assert self.is_set(BasePartState.COMPLETE)
+
+        if value <= 0 or value > self._stake:
+            raise InvalidParamsException("Failed to stake: value <= 0 or value > stake amount")
+
+        self._stake -= value
+        self.set_dirty(True)
+
     def set_unstake(self, block_height: int, value: int):
         assert self.is_set(BasePartState.COMPLETE)
 
