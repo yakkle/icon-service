@@ -36,6 +36,8 @@ class Storage(StorageBase):
 
     TOTAL_PREP_DELEGATED_KEY: bytes = PREFIX + b'tpd'
 
+    CONFIRM_DECENTRALIZATION: bytes = PREFIX + b'cd'
+
     def __init__(self, db: 'ContextDatabase'):
         super().__init__(db)
         self._meta_data: Optional['IISSMetaData'] = None
@@ -153,6 +155,23 @@ class Storage(StorageBase):
             calc_period: int = data[1]
             return calc_period
         return None
+
+    def put_confirm_decentralization(self, context: 'IconScoreContext'):
+        version = 0
+        confirm_decentralization = True
+        data: list = [version, confirm_decentralization]
+        value: bytes = MsgPackForDB.dumps(data)
+        self._db.put(context, self.CONFIRM_DECENTRALIZATION, value)
+
+    def get_confirm_decentralization(self, context: 'IconScoreContext') -> bool:
+        value: bytes = self._db.get(context, self.CONFIRM_DECENTRALIZATION)
+        if value:
+            data: list = MsgPackForDB.loads(value)
+            version: int = data[0]
+            assert version == 0
+            confirm_decentralization: bool = data[1]
+            return confirm_decentralization
+        return False
 
 
 class RewardRate:

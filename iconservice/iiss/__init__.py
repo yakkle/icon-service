@@ -17,14 +17,29 @@
 from typing import TYPE_CHECKING
 import decimal
 
+from iconcommons import Logger
+
 from .engine import Engine as IISSEngine
 from .engine import EngineListener as IISSEngineListener
 from .storage import Storage as IISSStorage
-from ..icon_constant import REV_DECENTRALIZATION
+from ..icon_constant import REV_DECENTRALIZATION, IISS_LOG_TAG
 
 if TYPE_CHECKING:
     from ..iconscore.icon_score_context import IconScoreContext
     from ..prep.data.prep import PRep
+
+
+def _decentralization_is_confirmed(context: 'IconScoreContext') -> bool:
+    return context.storage.iiss.get_confirm_decentralization(context)
+
+
+def _check_prep_count_and_delegated_amount(context: 'IconScoreContext'):
+    """ICON network decentralize when the last prep of main prep count ( default: 22th )
+        get delegation more than some value( default: total-supply * 0.002icx )"""
+    if context.preps.size(active_prep_only=True) >= context.main_prep_count:
+        minimum_delegate = get_minimum_delegate_for_bottom_prep(context)
+        bottom_prep: 'PRep' = context.preps.get_by_index(context.main_prep_count - 1)
+        return bottom_prep.delegated >= minimum_delegate
 
 
 def check_decentralization_condition(context: 'IconScoreContext') -> bool:
@@ -33,14 +48,15 @@ def check_decentralization_condition(context: 'IconScoreContext') -> bool:
         # network has been already decentralized
         return False
 
+    if _decentralization_is_confirmed(context):
+        return True
+
     context.update_dirty_prep_batch()
 
-    """ICON network decentralize when the last prep of main prep count ( default: 22th )
-    get delegation more than some value( default: total-supply * 0.002icx )"""
-    if context.preps.size(active_prep_only=True) >= context.main_prep_count:
-        minimum_delegate = get_minimum_delegate_for_bottom_prep(context)
-        bottom_prep: 'PRep' = context.preps.get_by_index(context.main_prep_count - 1)
-        return bottom_prep.delegated >= minimum_delegate
+    if _check_prep_count_and_delegated_amount(context):
+        context.storage.iiss.put_confirm_decentralization(context)
+        Logger.info(tag=IISS_LOG_TAG,
+                    msg=f"Decentralization condition is met: {context.block}")
     return False
 
 

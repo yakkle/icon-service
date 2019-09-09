@@ -481,8 +481,7 @@ class IconServiceEngine(ContextContainer):
             if check_decentralization_condition(context):
                 precommit_flag |= PrecommitFlag.DECENTRALIZATION
                 Logger.info(tag=self.TAG,
-                            msg=f"Decentralization condition is met: {context.block}")
-
+                            msg=f"Decentralization will be start from the next block. Current: {context.block}")
                 # When decentralization begins,
                 # change the reward calculation period from 43200 to 43120 which is the same as term_period
                 context.storage.iiss.put_calc_period(context, context.term_period)
