@@ -442,7 +442,6 @@ class IconServiceEngine(ContextContainer):
         regulator: Optional['Regulator'] = None
         if is_block_editable and context.is_decentralized():
             base_transaction, regulator = BaseTransactionCreator.create_base_transaction(context)
-            # todo: if the txHash field is add to addedTransaction, should remove this logic
             tx_params_to_added = deepcopy(base_transaction["params"])
             del tx_params_to_added["txHash"]
             added_transactions[base_transaction["params"]["txHash"]] = tx_params_to_added
@@ -488,8 +487,7 @@ class IconServiceEngine(ContextContainer):
                 # change the reward calculation period from 43200 to 43120 which is the same as term_period
                 context.storage.iiss.put_calc_period(context, context.term_period)
 
-        main_prep_as_dict, term = self._after_transaction_process(
-            context, precommit_flag, prev_block_generator, prev_block_validators)
+        main_prep_as_dict, term = self._after_transaction_process(context, precommit_flag)
 
         # Save precommit data
         # It will be written to levelDB on commit
@@ -526,10 +524,21 @@ class IconServiceEngine(ContextContainer):
                                     context: 'IconScoreContext',
                                     prev_block_generator: Optional['Address'] = None,
                                     prev_block_validators: Optional[List['Address']] = None):
-
-        if not context.is_decentralized():
+        if context.revision < REV_IISS:
             return
 
+        context.engine.iiss.update_db_at_the_start_of_period(context)
+        if not context.is_decentralized():
+            return
+        context.engine.iiss.update_db_every_block_after_decentralization(context,
+                                                                         prev_block_generator,
+                                                                         prev_block_validators)
+        self._process_prep_productivity(context, prev_block_generator, prev_block_validators)
+
+    def _process_prep_productivity(self,
+                                   context: 'IconScoreContext',
+                                   prev_block_generator: Optional['Address'],
+                                   prev_block_validators: Optional[List['Address']]):
         # Skip the first block after decentralization
         if context.is_the_first_block_on_decentralization():
             Logger.info(tag=self.TAG,
@@ -540,12 +549,9 @@ class IconServiceEngine(ContextContainer):
         self._update_last_generate_block_height(context, prev_block_generator)
 
     @classmethod
-    def _after_transaction_process(
-            cls,
-            context: 'IconScoreContext',
-            flag: 'PrecommitFlag',
-            prev_block_generator: Optional['Address'] = None,
-            prev_block_validators: Optional[List['Address']] = None) -> Tuple[Optional[dict], Optional['Term']]:
+    def _after_transaction_process(cls,
+                                   context: 'IconScoreContext',
+                                   flag: 'PrecommitFlag') -> Tuple[Optional[dict], Optional['Term']]:
         """If the current term is ended, prepare the next term,
         - Prepare the list of main P-Reps for the next term which is passed to loopchain
         - Calculate the weighted average of ireps
@@ -554,16 +560,17 @@ class IconServiceEngine(ContextContainer):
 
         :param context:
         :param flag:
-        :param prev_block_generator:
-        :param prev_block_validators:
         :return:
         """
+        main_prep_as_dict, term = None, None
+        if context.revision < REV_IISS:
+            return main_prep_as_dict, term
 
         main_prep_as_dict, term = context.engine.prep.on_block_invoked(
             context, bool(flag & PrecommitFlag.DECENTRALIZATION))
 
-        if context.revision >= REV_IISS:
-            context.engine.iiss.update_db(context, term, prev_block_generator, prev_block_validators, flag)
+        context.engine.iiss.update_db_at_the_end_of_period(context, term, flag)
+        context.engine.iiss.update_db_in_term_prep_changed(context, term)
 
         context.update_batch()
         context.preps.freeze()

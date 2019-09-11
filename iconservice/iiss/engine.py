@@ -640,30 +640,76 @@ class Engine(EngineBase):
 
         return data
 
-    def update_db(self,
-                  context: 'IconScoreContext',
-                  term: Optional['Term'],
-                  prev_block_generator: Optional['Address'],
-                  prev_block_validators: Optional[List['Address']],
-                  flag: 'PrecommitFlag'):
+    def update_db_at_the_start_of_period(self,
+                                         context: 'IconScoreContext'):
+        end_block_height: int = context.storage.iiss.get_end_block_height_of_calc(context)
+        period: int = context.storage.iiss.get_calc_period(context)
+        start_calc_block: int = end_block_height - period + 1
 
-        # every block time
+        # if in prevote period, term is None, elif after decentralization, term is 'Term' instance
+        term: Optional['Term'] = context.engine.prep.term
+        if context.block.height == start_calc_block:
+            self._put_gv_to_rc_db(context, term)
+
+        # put P-Rep if need
+        if term is not None and term.start_block_height == context.block.height:
+            if start_calc_block != term.start_block_height:
+                self._put_gv_to_rc_db(context, term)
+            self._put_preps_to_rc_db(context, term)
+
+    def update_db_every_block_after_decentralization(self,
+                                                     context: 'IconScoreContext',
+                                                     prev_block_generator: Optional['Address'],
+                                                     prev_block_validators: Optional[List['Address']]):
         self._put_block_produce_info_to_rc_db(context, prev_block_generator, prev_block_validators)
 
+    def update_db_at_the_end_of_period(self,
+                                       context: 'IconScoreContext',
+                                       term: Optional['Term'],
+                                       flag: 'PrecommitFlag'):
         if not self._is_iiss_calc(flag):
-            # In-term P-Rep replacement
-            if term:
-                self._put_gv(context, term)
-                self._put_preps_to_rc_db(context, term)
             return
 
-        # every term
+        # Case of genesis calc or end of calc
+        self._update_state_db_on_end_calc(context, term)
+        self._put_header_to_rc_db(context)
+
+    def update_db_in_term_prep_changed(self,
+                                       context: 'IconScoreContext',
+                                       term: Optional['Term']):
+        if term is None:
+            return
+
+        # Only in case of in term Prep change, putting preps data
+        if term is not None and term.start_block_height != context.block.height + 1:
+            # todo: check whether write gv or not
+            # self._put_gv_to_rc_db(context, term)
+            self._put_preps_to_rc_db(context, term)
+
+    def _update_state_db_on_end_calc(self, context: 'IconScoreContext', term: Optional['Term']):
+        # Warning: To sync with previous code, keep order about putting context db
         self._put_last_calc_info(context)
         self._put_end_calc_block_height(context)
+        self._put_rrep(context, term)
 
-        self._put_header_to_rc_db(context)
-        self._put_gv(context, term)
-        self._put_preps_to_rc_db(context, term)
+    @staticmethod
+    def _put_rrep(context: 'IconScoreContext', term: Optional['Term']):
+        # todo: check this logic
+        if term is None:
+            current_total_supply: int = context.storage.icx.get_total_supply(context)
+            current_total_prep_delegated: int = context.preps.total_delegated
+        else:
+            current_total_supply: int = term.total_supply
+            current_total_prep_delegated: int = term.total_delegated
+
+        reward_rate: 'RewardRate' = context.storage.iiss.get_reward_rate(context)
+        reward_rate.reward_prep = IssueFormula.calculate_rrep(context.storage.iiss.reward_min,
+                                                              context.storage.iiss.reward_max,
+                                                              context.storage.iiss.reward_point,
+                                                              current_total_supply,
+                                                              current_total_prep_delegated)
+
+        context.storage.iiss.put_reward_rate(context, reward_rate)
 
     def send_ipc(self,
                  context: 'IconScoreContext',
@@ -728,47 +774,27 @@ class Engine(EngineBase):
         context.storage.rc.put(context.rc_block_batch, data)
 
     @classmethod
-    def _put_gv(cls,
-                context: 'IconScoreContext',
-                term: Optional['Term']):
+    def _put_gv_to_rc_db(cls,
+                         context: 'IconScoreContext',
+                         term: Optional['Term']):
 
         """
             we should divide logic that case updated term during normal term.
             because updated term(only changed preps and total_delegated)
             must be changed by using determined term before.
         """
-        if term is None:
-            # Prevoting
-            current_total_supply: int = context.storage.icx.get_total_supply(context)
-            current_total_prep_delegated: int = context.preps.total_delegated
-        else:
-            # Decentralization
-            current_total_supply: int = term.total_supply
-            current_total_prep_delegated: int = term.total_delegated
-
-        reward_rate: 'RewardRate' = context.storage.iiss.get_reward_rate(context)
-        reward_prep: int = IssueFormula.calculate_rrep(context.storage.iiss.reward_min,
-                                                       context.storage.iiss.reward_max,
-                                                       context.storage.iiss.reward_point,
-                                                       current_total_supply,
-                                                       current_total_prep_delegated)
-
-        reward_rate.reward_prep = reward_prep
+        version: int = context.storage.rc.current_version
         irep: int = term.irep if term is not None else 0
         calculated_irep: int = IssueFormula.calculate_irep_per_block_contributor(irep)
+        reward_rate: 'RewardRate' = context.storage.iiss.get_reward_rate(context)
+        reward_prep_for_rc = IssueFormula.calculate_temporary_reward_prep(reward_rate.reward_prep)
 
-        reward_prep_for_rc = IssueFormula.calculate_temporary_reward_prep(reward_prep)
-
-        # todo: versioning at this point?
-        # end block height of term
-        version: int = context.storage.rc.current_version
         data: 'GovernanceVariable' = RewardCalcDataCreator.create_gv_variable(version,
                                                                               context.block.height,
                                                                               calculated_irep,
                                                                               reward_prep_for_rc,
                                                                               context.main_prep_count,
                                                                               context.main_and_sub_prep_count)
-        context.storage.iiss.put_reward_rate(context, reward_rate)
         context.storage.rc.put(context.rc_block_batch, data)
 
     @classmethod
