@@ -132,7 +132,6 @@ class TestPreps(TestIISSBase):
             self.assertEqual(block_count, response["validatedBlocks"])
 
     def test_prep_replace_in_term2(self):
-        PRep._penalty_grace_period = 40
         """
         scenario 2
             when it starts new preps on new term, half count (MAIN_PREPS // 2) preps have done to validate block until GRACE_PERIOD.
@@ -187,17 +186,16 @@ class TestPreps(TestIISSBase):
         for account in self._accounts[:PREP_MAIN_PREPS]:
             tx: dict = self.create_unregister_prep_tx(from_=account)
             tx_list.append(tx)
-        tx_results: List['TransactionResult'] = self.process_confirm_block_tx(tx_list=tx_list,
-                                                                          prev_block_generator=accounts[0].address,
-                                                                          prev_block_validators=[
-                                                                              account.address
-                                                                              for account in accounts[1:half_prep_count]
-                                                                          ])
+        tx_results: List['TransactionResult'] = self.process_confirm_block_tx(
+            tx_list=tx_list,
+            prev_block_generator=self._accounts[0].address,
+            prev_block_validators=[account.address for account in self._accounts[1:half_prep_count]]
+        )
         for tx_result in tx_results[1:]:
             self.assertEqual("PRepUnregistered(Address)", tx_result.event_logs[0].indexed[0])
 
         # maintain until GRACE_PERIOD
-        block_count1 = 39
+        block_count1 = 40
         self.make_blocks(to=self._block_height + block_count1,
                          prev_block_generator=accounts[0].address,
                          prev_block_validators=[
@@ -232,8 +230,7 @@ class TestPreps(TestIISSBase):
         tx_results: List[List['TransactionResult']] = self.make_blocks(
             to=self._block_height + block_count2,
             prev_block_generator=accounts[0].address,
-            prev_block_validators=
-            [
+            prev_block_validators=[
                 account.address
                 for account in
                 accounts[

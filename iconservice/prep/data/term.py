@@ -65,6 +65,7 @@ class Term(object):
     _VERSION = 0
 
     def __init__(self,
+                 create_block_height: int,
                  sequence: int,
                  start_block_height: int,
                  period: int,
@@ -72,8 +73,11 @@ class Term(object):
                  total_supply: int,
                  total_delegated: int):
         self._flag: _Flag = _Flag.NONE
-        self._sequence = sequence
 
+        # The block height when this term instance is created
+        self._create_block_height = create_block_height
+
+        self._sequence = sequence
         self._start_block_height = start_block_height
         self._period = period
 
@@ -94,6 +98,9 @@ class Term(object):
     def is_dirty(self) -> bool:
         return bool(self._flag & _Flag.DIRTY)
 
+    def is_the_first_block(self, block_height: int) -> bool:
+        return block_height == self._create_block_height + 1
+
     def freeze(self):
         self._flag = _Flag.FROZEN
 
@@ -109,6 +116,7 @@ class Term(object):
             f"Term:" \
             f"seq={self._sequence} " \
             f"start_block_height={self._start_block_height} " \
+            f"create_block_height={self._create_block_height}" \
             f"period={self._period} " \
             f"irep={self._irep}" \
             f"total_supply={self._total_supply} " \
@@ -127,6 +135,10 @@ class Term(object):
     @property
     def end_block_height(self) -> int:
         return self._start_block_height + self._period - 1
+
+    @property
+    def create_block_height(self) -> int:
+        return self._create_block_height
 
     @property
     def period(self) -> int:
@@ -369,9 +381,10 @@ class Term(object):
             [[snapshot.address, snapshot.delegated] for snapshot in self._sub_preps],
         ]
 
-    def copy(self) -> 'Term':
+    def copy(self, create_block_height: int) -> 'Term':
         term = copy.copy(self)
         term._flag = _Flag.NONE
+        term._create_block_height = create_block_height
 
         term._main_preps = [prep_snapshot for prep_snapshot in self._main_preps]
         term._sub_preps = [prep_snapshot for prep_snapshot in self._sub_preps]

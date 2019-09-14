@@ -72,10 +72,15 @@ class Engine(EngineBase, IISSEngineListener):
         self.preps = PRepContainer()
         # self.term should be None before decentralization
         self.term: Optional['Term'] = None
+        self._prev_term: Optional['Term'] = None
         self._initial_irep: Optional[int] = None
         self._penalty_imposer: Optional['PenaltyImposer'] = None
 
         Logger.debug(tag=self.TAG, msg="PRepEngine.__init__() end")
+
+    @property
+    def prev_term(self) -> Optional['Term']:
+        return self._prev_term
 
     def open(self,
              context: 'IconScoreContext',
@@ -161,6 +166,7 @@ class Engine(EngineBase, IISSEngineListener):
         # - penalty for elected P-Reps(main, sub)
         # - A new term is started
         if precommit_data.term is not None:
+            self._prev_term = self.term
             self.term: 'Term' = precommit_data.term
 
     def rollback(self):
@@ -259,7 +265,7 @@ class Engine(EngineBase, IISSEngineListener):
         if len(context.invalid_elected_preps) == 0:
             return None, None
 
-        new_term = self.term.copy()
+        new_term = self.term.copy(context.block.height)
         new_term.update_preps(context.invalid_elected_preps.values())
 
         assert new_term.is_dirty()
@@ -486,6 +492,7 @@ class Engine(EngineBase, IISSEngineListener):
         irep: int = cls._calculate_weighted_average_of_irep(new_preps[:context.main_prep_count])
 
         term = Term(
+            context.block.height,
             sequence,
             start_block_height,
             context.term_period,

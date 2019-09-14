@@ -530,11 +530,11 @@ class IconServiceEngine(ContextContainer):
         if not context.is_decentralized():
             return
 
-        # Skip the first block after decentralization
-        if context.is_the_first_block_on_decentralization():
-            Logger.info(tag=self.TAG,
-                        msg=f"The first block of decentralization: {context.block}")
-            return
+        # # Skip the first block after decentralization
+        # if context.is_the_first_block_on_decentralization():
+        #     Logger.info(tag=self.TAG,
+        #                 msg=f"The first block of decentralization: {context.block}")
+        #     return
 
         self._update_productivity(context, prev_block_generator, prev_block_validators)
         self._update_last_generate_block_height(context, prev_block_generator)
@@ -583,6 +583,17 @@ class IconServiceEngine(ContextContainer):
         :param prev_block_validators:
         :return:
         """
+        prep_engine = context.engine.prep
+        term = prep_engine.term
+
+        if term is None:
+            return
+
+        if term.is_the_first_block(context.block.height):
+            term = prep_engine.prev_term
+            if term is None:
+                return
+
         # validators set contains not only prev_block_validators but also a prev_block_generator
         validators: Set['Address'] = set()
 
@@ -595,7 +606,7 @@ class IconServiceEngine(ContextContainer):
             Logger.warning(tag=cls.TAG, msg=f"No block validators: block={context.block}")
             return
 
-        for prep_snapshot in context.engine.prep.term.main_preps:
+        for prep_snapshot in term.main_preps:
             address = prep_snapshot.address
 
             is_validator: bool = address in validators
