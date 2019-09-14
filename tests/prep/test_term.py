@@ -44,6 +44,7 @@ class TestTerm(unittest.TestCase):
         self.irep = random.randint(10000, 50000)
         self.total_supply = 800_600_000
         self.total_delegated = 2000 * 10 ** 18
+        self.create_block_height = random.randint(100, 10000)
 
         self.term = Term(
             sequence=self.sequence,
@@ -51,7 +52,8 @@ class TestTerm(unittest.TestCase):
             period=self.period,
             irep=self.irep,
             total_supply=self.total_supply,
-            total_delegated=self.total_delegated
+            total_delegated=self.total_delegated,
+            create_block_height=self.create_block_height
         )
         assert not self.term.is_frozen()
         assert not self.term.is_dirty()
@@ -108,7 +110,7 @@ class TestTerm(unittest.TestCase):
             assert isinstance(self.term.root_hash, bytes)
             assert len(self.term.root_hash) == 32
 
-            term = self.term.copy()
+            term = self.term.copy(self.term.create_block_height + 100)
             invalid_main_prep = copy.deepcopy(self.preps[0])
             invalid_main_prep.penalty = penalty
             invalid_elected_preps: List['PRep'] = [invalid_main_prep]
@@ -126,7 +128,7 @@ class TestTerm(unittest.TestCase):
         assert isinstance(self.term.root_hash, bytes)
         assert len(self.term.root_hash) == 32
 
-        term = self.term.copy()
+        term = self.term.copy(self.term.create_block_height + 100)
         invalid_main_prep = copy.deepcopy(self.preps[0])
         invalid_main_prep.penalty = PenaltyReason.BLOCK_VALIDATION
         invalid_elected_preps: List['PRep'] = [invalid_main_prep]
@@ -143,7 +145,7 @@ class TestTerm(unittest.TestCase):
         assert isinstance(self.term.root_hash, bytes)
         assert len(self.term.root_hash) == 32
 
-        term = self.term.copy()
+        term = self.term.copy(self.term.create_block_height + 100)
         invalid_main_prep = copy.deepcopy(self.preps[0])
         invalid_main_prep.status = PRepStatus.UNREGISTERED
         invalid_elected_preps: List['PRep'] = [invalid_main_prep]
@@ -154,13 +156,14 @@ class TestTerm(unittest.TestCase):
         assert isinstance(term.root_hash, bytes)
         assert term.root_hash != self.term.root_hash
         assert term.total_elected_prep_delegated == self.total_elected_prep_delegated - invalid_main_prep.delegated
+        assert term.create_block_height == self.term.create_block_height + 100
 
     def test_update_preps_with_sub_preps_only(self):
         # Remove all sub P-Reps
 
         self.term.set_preps(self.preps, PREP_MAIN_PREPS, PREP_MAIN_AND_SUB_PREPS)
 
-        term = self.term.copy()
+        term = self.term.copy(self.term.create_block_height + 100)
         invalid_elected_preps: List['PRep'] = []
         for i in range(PREP_MAIN_PREPS, PREP_MAIN_AND_SUB_PREPS):
             prep = self.preps[i]
@@ -176,7 +179,7 @@ class TestTerm(unittest.TestCase):
 
     def test_update_preps_2(self):
         # Remove all main P-Reps
-        term = self.term.copy()
+        term = self.term.copy(self.term.create_block_height + 100)
         invalid_elected_preps: List['PRep'] = [prep for prep in self.preps[:PREP_MAIN_PREPS]]
         term.update_preps(invalid_elected_preps)
         assert len(term.main_preps) == PREP_MAIN_PREPS
@@ -185,7 +188,7 @@ class TestTerm(unittest.TestCase):
         assert term.root_hash != self.term.root_hash
 
         # Remove all P-Reps except for a P-Rep
-        term = self.term.copy()
+        term = self.term.copy(self.term.create_block_height + 100)
         invalid_elected_preps: List['PRep'] = [prep for prep in self.preps[1:PREP_MAIN_AND_SUB_PREPS]]
         term.update_preps(invalid_elected_preps)
         assert len(term.main_preps) == 1

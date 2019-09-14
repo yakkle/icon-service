@@ -65,13 +65,13 @@ class Term(object):
     _VERSION = 0
 
     def __init__(self,
-                 create_block_height: int,
                  sequence: int,
                  start_block_height: int,
                  period: int,
                  irep: int,
                  total_supply: int,
-                 total_delegated: int):
+                 total_delegated: int,
+                 create_block_height: int):
         self._flag: _Flag = _Flag.NONE
 
         # The block height when this term instance is created
@@ -353,10 +353,11 @@ class Term(object):
         irep: int = data[4]
         total_supply: int = data[5]
         total_delegated: int = data[6]
-        main_preps = data[7]
-        sub_preps = data[8]
+        create_block_height: int = data[7]
+        main_preps = data[8]
+        sub_preps = data[9]
 
-        term = Term(sequence, start_block_height, period, irep, total_supply, total_delegated)
+        term = Term(sequence, start_block_height, period, irep, total_supply, total_delegated, create_block_height)
 
         for address, delegated in main_preps:
             term._main_preps.append(PRepSnapshot(address, delegated))
@@ -377,6 +378,7 @@ class Term(object):
             self._irep,
             self._total_supply,
             self._total_delegated,
+            self._create_block_height,
             [[snapshot.address, snapshot.delegated] for snapshot in self._main_preps],
             [[snapshot.address, snapshot.delegated] for snapshot in self._sub_preps],
         ]
