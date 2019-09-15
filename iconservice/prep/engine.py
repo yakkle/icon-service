@@ -70,8 +70,8 @@ class Engine(EngineBase, IISSEngineListener):
         }
 
         self.preps = PRepContainer()
-        # self.term should be None before decentralization
-        self.term: Optional['Term'] = None
+        # self._term should be None before decentralization
+        self._term: Optional['Term'] = None
         self._prev_term: Optional['Term'] = None
         self._initial_irep: Optional[int] = None
         self._penalty_imposer: Optional['PenaltyImposer'] = None
@@ -81,6 +81,10 @@ class Engine(EngineBase, IISSEngineListener):
     @property
     def prev_term(self) -> Optional['Term']:
         return self._prev_term
+
+    @property
+    def term(self) -> Optional['Term']:
+        return self._term
 
     def open(self,
              context: 'IconScoreContext',
@@ -96,7 +100,7 @@ class Engine(EngineBase, IISSEngineListener):
                                    block_validation_penalty_threshold)
 
         self._load_preps(context)
-        self.term: Optional['Term'] = context.storage.prep.get_term(context)
+        self._prev_term, self._term = context.storage.prep.get_terms(context)
         self._initial_irep = irep
 
         context.engine.iiss.add_listener(self)
@@ -166,8 +170,8 @@ class Engine(EngineBase, IISSEngineListener):
         # - penalty for elected P-Reps(main, sub)
         # - A new term is started
         if precommit_data.term is not None:
-            self._prev_term = self.term
-            self.term: 'Term' = precommit_data.term
+            self._prev_term = self._term
+            self._term: 'Term' = precommit_data.term
 
     def rollback(self):
         pass
@@ -178,7 +182,7 @@ class Engine(EngineBase, IISSEngineListener):
             is_decentralization_started: bool) -> Tuple[Optional[dict], Optional['Term']]:
         """Called on IconServiceEngine._after_transaction_process()
 
-        1. Adjust the grade for invalid P-Reps
+        1. Change the grades of invalid P-Reps
         2. Update elected P-Reps in this term
 
         :param context:
@@ -188,24 +192,24 @@ class Engine(EngineBase, IISSEngineListener):
         """
         if is_decentralization_started or self._is_term_ended(context):
             # The current P-Rep term is over. Prepare the next P-Rep term
-            main_prep_as_dict, term = self._on_term_ended(context)
+            main_prep_as_dict, new_term = self._on_term_ended(context)
         elif context.is_decentralized():
             # In-term P-Rep replacement
-            main_prep_as_dict, term = self._on_term_updated(context)
+            main_prep_as_dict, new_term = self._on_term_updated(context)
         else:
             main_prep_as_dict = None
-            term = None
+            new_term = None
 
-        if term:
-            context.storage.prep.put_term(context, term)
+        if new_term:
+            context.storage.prep.put_terms(context, self._term, new_term)
 
-        return main_prep_as_dict, term
+        return main_prep_as_dict, new_term
 
     def _is_term_ended(self, context: 'IconScoreContext') -> bool:
-        if self.term is None:
+        if self._term is None:
             return False
 
-        return context.block.height == self.term.end_block_height
+        return context.block.height == self._term.end_block_height
 
     def _on_term_ended(self, context: 'IconScoreContext') -> Tuple[dict, 'Term']:
         """Called in IconServiceEngine.invoke() every time when a term is ended
@@ -213,7 +217,7 @@ class Engine(EngineBase, IISSEngineListener):
         Update P-Rep grades according to PRep.delegated
         """
 
-        self._put_last_term_info(context, self.term)
+        self._put_last_term_info(context, self._term)
 
         # All block validation penalties are released
         self._release_block_validation_penalty(context)
@@ -221,8 +225,8 @@ class Engine(EngineBase, IISSEngineListener):
         # Update the grades of the elected preps on the current and next term
         self._update_prep_grades_on_term_ended(context)
 
-        # Create a term with context.preps whose grades are up-to-date
-        new_term: 'Term' = self._create_next_term(context, self.term)
+        # Create a term using up-to-date P-Reps
+        new_term: 'Term' = self._create_next_term(context, self._term)
         main_preps_as_dict: dict = \
             self._get_updated_main_preps(context, new_term, PRepResultState.NORMAL)
 
@@ -253,6 +257,7 @@ class Engine(EngineBase, IISSEngineListener):
             - Send a new main P-Rep list to loopchain
             - Save the new term to DB
         3. Only sub P-Reps are invalidated
+            - No need to send a new main P-Rep list to loopchain
             - Save the new term to DB
         4. Both of them are invalidated
             - Send new main P-Rep list to loopchain
@@ -265,13 +270,13 @@ class Engine(EngineBase, IISSEngineListener):
         if len(context.invalid_elected_preps) == 0:
             return None, None
 
-        new_term = self.term.copy(context.block.height)
+        new_term = self._term.copy(create_block_height=context.block.height)
         new_term.update_preps(context.invalid_elected_preps.values())
 
         assert new_term.is_dirty()
         new_term.freeze()
 
-        if self.term.root_hash != new_term.root_hash:
+        if self._term.root_hash != new_term.root_hash:
             # Case 2 or 4: Some main P-Reps are replaced or removed
             main_preps_as_dict: Optional[dict] = \
                 self._get_updated_main_preps(context, new_term, PRepResultState.IN_TERM_UPDATED)
@@ -299,9 +304,9 @@ class Engine(EngineBase, IISSEngineListener):
         # 0: old grade, 1: new grade
         prep_grades: Dict['Address', Tuple['PRepGrade', 'PRepGrade']] = {}
 
-        if self.term:
+        if self._term:
             # Put the address and grade of a old P-Rep to prep_grades dict
-            old_preps: Iterable['PRepSnapshot'] = self.term.preps
+            old_preps: Iterable['PRepSnapshot'] = self._term.preps
             for prep_snapshot in old_preps:
                 # grades[0] is an old grade and grades[1] is a new grade
                 prep = context.preps.get_by_address(prep_snapshot.address)
@@ -391,7 +396,7 @@ class Engine(EngineBase, IISSEngineListener):
 
         # Set an initial value to irep of a P-Rep on registerPRep
         if context.is_decentralized():
-            dirty_prep.set_irep(self.term.irep, context.block.height)
+            dirty_prep.set_irep(self._term.irep, context.block.height)
         else:
             dirty_prep.set_irep(self._initial_irep, context.block.height)
 
@@ -579,7 +584,7 @@ class Engine(EngineBase, IISSEngineListener):
         :return:
         """
         # This API is available after IISS decentralization is enabled.
-        if context.revision < REV_DECENTRALIZATION or self.term.sequence < 0:
+        if context.revision < REV_DECENTRALIZATION or self._term.sequence < 0:
             raise MethodNotFoundException("setGovernanceVariables is disabled")
 
         address: 'Address' = context.tx.origin
@@ -645,7 +650,7 @@ class Engine(EngineBase, IISSEngineListener):
 
         :param context:
         """
-        for snapshot in self.term.main_preps:
+        for snapshot in self._term.main_preps:
             # Get a up-to-date main prep from context
             prep: 'PRep' = context.get_prep(snapshot.address)
             assert isinstance(prep, PRep)
@@ -728,11 +733,11 @@ class Engine(EngineBase, IISSEngineListener):
         :param _params:
         :return:
         """
-        total_delegated = 0 if self.term is None else self.term.total_delegated
+        total_delegated = 0 if self._term is None else self._term.total_delegated
         prep_list: list = []
 
-        if self.term:
-            for snapshot in self.term.main_preps:
+        if self._term:
+            for snapshot in self._term.main_preps:
                 item = {
                     "address": snapshot.address,
                     "delegated": snapshot.delegated
@@ -751,11 +756,11 @@ class Engine(EngineBase, IISSEngineListener):
         :param _params:
         :return:
         """
-        total_delegated: int = 0 if self.term is None else self.term.total_delegated
+        total_delegated: int = 0 if self._term is None else self._term.total_delegated
         prep_list: list = []
 
-        if self.term:
-            for prep in self.term.sub_preps:
+        if self._term:
+            for prep in self._term.sub_preps:
                 item = {
                     "address": prep.address,
                     "delegated": prep.delegated
@@ -806,12 +811,12 @@ class Engine(EngineBase, IISSEngineListener):
         }
 
     def handle_get_p2p_endpoints(self, _context: 'IconScoreContext', _params: dict) -> List[str]:
-        if self.term is None:
+        if self._term is None:
             raise MethodNotFoundException("getP2PEndpoints not ready")
 
         endpoints: List[str] = []
 
-        for prep_snapshot in self.term.preps:
+        for prep_snapshot in self._term.preps:
             prep: 'PRep' = self.preps.get_by_address(prep_snapshot.address)
             endpoints.append(prep.p2p_endpoint)
 

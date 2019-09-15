@@ -46,7 +46,8 @@ def _create_term(total_supply: int, total_delegated: int):
                 period=43120,
                 irep=icx_to_loop(50000),
                 total_supply=total_supply,
-                total_delegated=total_delegated)
+                total_delegated=total_delegated,
+                create_block_height=100)
 
 
 class TestEngine(unittest.TestCase):

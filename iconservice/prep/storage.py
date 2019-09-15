@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional, Iterable
+from typing import TYPE_CHECKING, Optional, Iterable, Tuple
 
-from .data.prep import PRep
 from .data import Term
+from .data.prep import PRep
 from ..base.ComponentBase import StorageBase
 from ..base.exception import InvalidParamsException
 from ..utils.msgpack_for_db import MsgPackForDB
@@ -28,7 +28,6 @@ if TYPE_CHECKING:
 
 class Storage(StorageBase):
     PREFIX: bytes = b'prep'
-    TERM_KEY: bytes = PREFIX + b'term'
     PREP_REGISTRATION_FEE_KEY: bytes = PREFIX + b'prf'
 
     def __init__(self, db: 'ContextDatabase'):
@@ -89,12 +88,41 @@ class Storage(StorageBase):
                 if key[0] == 0x00 and len(key) == 21:
                     yield PRep.from_bytes(value)
 
-    def put_term(self, context: 'IconScoreContext', term: 'Term'):
-        value: bytes = MsgPackForDB.dumps(term.to_list())
-        self._db.put(context, self.TERM_KEY, value)
+    def get_terms(self, context: 'IconScoreContext') -> Tuple[Optional['Term'], Optional['Term']]:
+        """Returns the previous term and the current term
 
-    def get_term(self, context: 'IconScoreContext') -> Optional['Term']:
-        value: bytes = self._db.get(context, self.TERM_KEY)
+        :param context:
+        :return:
+        """
+        key: bytes = self.PREFIX + b"term0"
+        prev_term = self._get_term(context, key)
+
+        key: bytes = self.PREFIX + b"term1"
+        term = self._get_term(context, key)
+
+        return prev_term, term
+
+    def put_terms(self, context: 'IconScoreContext', prev_term: Optional['Term'], term: Optional['Term']):
+        """Save the previous term and the current term to storage
+
+        :param context:
+        :param prev_term:
+        :param term:
+        :return:
+        """
+        keys: Tuple[bytes, bytes] = (self.PREFIX + b"term0", self.PREFIX + b"term1")
+        terms: Tuple[Optional['Term'], Optional['Term']] = (prev_term, term)
+
+        for key, term in zip(keys, terms):
+            if term:
+                self._put_term(context, key, term)
+
+    def _put_term(self, context: 'IconScoreContext', key: bytes, term: 'Term'):
+        value: bytes = MsgPackForDB.dumps(term.to_list())
+        self._db.put(context, key, value)
+
+    def _get_term(self, context: 'IconScoreContext', key: bytes) -> Optional['Term']:
+        value: bytes = self._db.get(context, key)
         if value:
             data: list = MsgPackForDB.loads(value)
             return Term.from_list(data)

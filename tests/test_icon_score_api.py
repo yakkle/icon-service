@@ -319,7 +319,8 @@ class TestIconScoreApi(unittest.TestCase):
                     period=40,
                     irep=50_000,
                     total_supply=1_000_000_000,
-                    total_delegated=1_000_000_000)
+                    total_delegated=1_000_000_000,
+                    create_block_height=100)
         term.set_preps(test_preps, PREP_MAIN_PREPS, PREP_MAIN_AND_SUB_PREPS)
 
         self.context.engine.prep.term = term
