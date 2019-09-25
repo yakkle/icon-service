@@ -478,36 +478,7 @@ class Engine(EngineBase):
         :param _params:
         :return:
         """
-<<<<<<< HEAD
-        address: 'Address' = context.tx.origin
-
-        # TODO: error handling
-        if context.type == IconScoreContextType.INVOKE:
-            iscore, block_height = self._reward_calc_proxy.claim_iscore(
-                address, context.block.height, context.block.hash)
-        else:
-            iscore, block_height = 0, 0
-
-        icx: int = self._iscore_to_icx(iscore)
-
-        from_account: 'Account' = context.storage.icx.get_account(context, address)
-        treasury_address: 'Address' = context.storage.icx.fee_treasury
-        treasury_account: 'Account' = context.storage.icx.get_account(context, treasury_address)
-
-        treasury_account.withdraw(icx)
-        from_account.deposit(icx)
-        context.storage.icx.put_account(context, treasury_account)
-        context.storage.icx.put_account(context, from_account)
-
-        EventLogEmitter.emit_event_log(
-            context,
-            score_address=ZERO_SCORE_ADDRESS,
-            event_signature="IScoreClaimed(int,int)",
-            arguments=[iscore, icx],
-            indexed_args_count=0
-        )
-=======
-        Logger.debug(tag=_TAG, msg=f"handle_claim_iscore() start")
+        Logger.debug(msg=f"handle_claim_iscore() start")
 
         iscore, block_height = self._claim_iscore(context)
 
@@ -515,9 +486,9 @@ class Engine(EngineBase):
             self._commit_claim(context, iscore)
 
         else:
-            Logger.info(tag=_TAG, msg="I-Score is zero")
+            Logger.info(msg="I-Score is zero")
 
-        Logger.debug(tag=_TAG, msg="handle_claim_iscore() end")
+        Logger.debug(msg="handle_claim_iscore() end")
 
     def _claim_iscore(self, context: 'IconScoreContext') -> (int, int):
         address: 'Address' = context.tx.origin
@@ -557,12 +528,11 @@ class Engine(EngineBase):
                 indexed_args_count=0
             )
         except BaseException as e:
-            Logger.exception(tag=_TAG, msg=str(e))
+            Logger.exception(msg=str(e))
             success = False
             raise e
         finally:
             self._reward_calc_proxy.commit_claim(success, address, block.height, block.hash)
->>>>>>> c5109c6e... Bug Fix
 
     def handle_query_iscore(self, _context: 'IconScoreContext', params: dict) -> dict:
         ret_params: dict = TypeConverter.convert(params, ParamType.IISS_QUERY_ISCORE)
