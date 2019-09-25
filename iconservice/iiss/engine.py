@@ -13,19 +13,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Optional, List, Dict, Tuple, Union
 
 from iconcommons.logger import Logger
 
 from .reward_calc.data_creator import DataCreator as RewardCalcDataCreator
-from .reward_calc.ipc.message import CalculateResponse, VersionResponse
+from .reward_calc.ipc.message import CalculateDoneNotification, ReadyNotification
 from .reward_calc.ipc.reward_calc_proxy import RewardCalcProxy
 from ..base.ComponentBase import EngineBase
 from ..base.address import Address
 from ..base.address import ZERO_SCORE_ADDRESS
-from ..base.exception import InvalidParamsException, InvalidRequestException, OutOfBalanceException, FatalException
+from ..base.exception import \
+    InvalidParamsException, InvalidRequestException, OutOfBalanceException, FatalException
 from ..base.type_converter import TypeConverter
 from ..base.type_converter_templates import ConstantKeys, ParamType
 from ..icon_constant import IISS_MAX_DELEGATIONS, ISCORE_EXCHANGE_RATE, ICON_SERVICE_LOG_TAG, IISS_MAX_REWARD_RATE, \
@@ -90,23 +90,22 @@ class Engine(EngineBase):
         assert isinstance(listener, EngineListener)
         self._listeners.remove(listener)
 
-    # TODO implement version callback function
     @staticmethod
-    def version_callback(cb_data: 'VersionResponse'):
-        Logger.debug(tag="iiss", msg=f"version callback called with {cb_data}")
+    def ready_callback(cb_data: 'ReadyNotification'):
+        Logger.debug(msg=f"ready callback called with {cb_data}")
 
     @staticmethod
-    def calculate_callback(cb_data: 'CalculateResponse'):
+    def calculate_done_callback(cb_data: 'CalculateDoneNotification'):
         # cb_data.success == False: RC has reset the state to before 'CALCULATE' request
         if not cb_data.success:
             raise FatalException(f"Reward calc has failed calculating about block height:{cb_data.block_height}")
 
         IconScoreContext.storage.rc.put_calc_response_from_rc(cb_data.iscore, cb_data.block_height)
-        Logger.debug(f"calculate callback called with {cb_data}", ICON_SERVICE_LOG_TAG)
+        Logger.debug(msg=f"calculate done callback called with {cb_data}")
 
     def _init_reward_calc_proxy(self, log_dir: str, data_path: str, socket_path: str):
-        self._reward_calc_proxy = RewardCalcProxy(calc_callback=self.calculate_callback,
-                                                  version_callback=self.version_callback)
+        self._reward_calc_proxy = RewardCalcProxy(calc_done_callback=self.calculate_done_callback,
+                                                  ready_callback=self.ready_callback)
         self._reward_calc_proxy.open(log_dir=log_dir, sock_path=socket_path, iiss_db_path=data_path)
         self._reward_calc_proxy.start()
 
@@ -479,6 +478,7 @@ class Engine(EngineBase):
         :param _params:
         :return:
         """
+<<<<<<< HEAD
         address: 'Address' = context.tx.origin
 
         # TODO: error handling
@@ -506,6 +506,63 @@ class Engine(EngineBase):
             arguments=[iscore, icx],
             indexed_args_count=0
         )
+=======
+        Logger.debug(tag=_TAG, msg=f"handle_claim_iscore() start")
+
+        iscore, block_height = self._claim_iscore(context)
+
+        if iscore > 0:
+            self._commit_claim(context, iscore)
+
+        else:
+            Logger.info(tag=_TAG, msg="I-Score is zero")
+
+        Logger.debug(tag=_TAG, msg="handle_claim_iscore() end")
+
+    def _claim_iscore(self, context: 'IconScoreContext') -> (int, int):
+        address: 'Address' = context.tx.origin
+        block: 'Block' = context.block
+
+        if context.type == IconScoreContextType.INVOKE:
+            iscore, block_height = self._reward_calc_proxy.claim_iscore(
+                address, block.height, block.hash)
+        else:
+            # For debug_estimateStep request
+            iscore, block_height = 0, 0
+
+        return iscore, block_height
+
+    def _commit_claim(self, context: 'IconScoreContext', iscore: int):
+        address: 'Address' = context.tx.origin
+        block: 'Block' = context.block
+        success = True
+
+        try:
+            icx: int = self._iscore_to_icx(iscore)
+
+            from_account: 'Account' = context.storage.icx.get_account(context, address)
+            treasury_address: 'Address' = context.storage.icx.fee_treasury
+            treasury_account: 'Account' = context.storage.icx.get_account(context, treasury_address)
+
+            treasury_account.withdraw(icx)
+            from_account.deposit(icx)
+            context.storage.icx.put_account(context, treasury_account)
+            context.storage.icx.put_account(context, from_account)
+
+            EventLogEmitter.emit_event_log(
+                context,
+                score_address=ZERO_SCORE_ADDRESS,
+                event_signature="IScoreClaimed(int,int)",
+                arguments=[iscore, icx],
+                indexed_args_count=0
+            )
+        except BaseException as e:
+            Logger.exception(tag=_TAG, msg=str(e))
+            success = False
+            raise e
+        finally:
+            self._reward_calc_proxy.commit_claim(success, address, block.height, block.hash)
+>>>>>>> c5109c6e... Bug Fix
 
     def handle_query_iscore(self, _context: 'IconScoreContext', params: dict) -> dict:
         ret_params: dict = TypeConverter.convert(params, ParamType.IISS_QUERY_ISCORE)

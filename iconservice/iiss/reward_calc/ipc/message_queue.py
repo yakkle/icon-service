@@ -14,9 +14,12 @@
 # limitations under the License.
 
 import asyncio
-from typing import Callable, Any
 
-from .message import Request, Response
+from typing import Callable, Any
+from iconcommons.logger import Logger
+from typing import Callable, Any, Optional
+
+from .message import Request, Response, MessageType
 from iconservice.base.exception import InvalidParamsException
 
 
@@ -44,11 +47,14 @@ class MessageQueue(object):
         return future
 
     def message_handler(self, response: 'Response'):
+        if response.is_notification():
+            self.notify_handler(response)
+            return
+
         try:
             self.put_response(response)
         except KeyError:
-            if isinstance(response, self.notify_message):
-                self.notify_handler(response)
+            Logger.warning(f"Unexpected response arrived.  Respond Id : {response.msg_id}")
 
     def put_response(self, response: 'Response'):
         msg_id: int = response.msg_id
