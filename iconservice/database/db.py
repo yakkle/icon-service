@@ -115,7 +115,7 @@ class KeyValueDatabase(object):
             for key, value in it:
                 if key[:2] == b'TX':
                     ret: Optional[bytes] = self._db.get(key)
-                    if ret is None:
+                    if ret is not None:
                         raise AssertionError("Same tx index exists")
                 if value:
                     wb.put(key, value)
