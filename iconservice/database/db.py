@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Optional, Tuple, Iterable
 import plyvel
 
 from iconcommons.logger import Logger
+
 from .batch import TransactionBatchValue
 from ..base.exception import DatabaseException, InvalidParamsException, AccessDeniedException
 from ..icon_constant import ICON_DB_LOG_TAG
@@ -99,6 +100,27 @@ class KeyValueDatabase(object):
 
     def iterator(self) -> iter:
         return self._db.iterator()
+
+    def write_batch_test(self, it: Iterable[Tuple[bytes, Optional[bytes]]]) -> None:
+        """Write a batch to the database for the specified states dict.
+
+        :param it: iterable which return tuple(key, value)
+            key: bytes
+            value: optional bytes
+        """
+        if it is None:
+            return
+
+        with self._db.write_batch() as wb:
+            for key, value in it:
+                if key[:2] == b'TX':
+                    ret: Optional[bytes] = self._db.get(key)
+                    if ret is None:
+                        raise AssertionError("Same tx index exists")
+                if value:
+                    wb.put(key, value)
+                else:
+                    wb.delete(key)
 
     def write_batch(self, it: Iterable[Tuple[bytes, Optional[bytes]]]) -> None:
         """Write a batch to the database for the specified states dict.
