@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import os
+from distutils.dir_util import copy_tree
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from iconcommons import Logger
@@ -203,6 +204,10 @@ class Storage(object):
         else:
             raise DatabaseException("Cannot create IISS DB because of invalid path. Check both IISS "
                                     "current DB path and IISS DB path")
+
+        test_db_path: str = "test_rc_db_". \
+            join(iiss_rc_db_path.rsplit(self._IISS_RC_DB_NAME_PREFIX, 1))
+        copy_tree(iiss_rc_db_path, test_db_path)
 
         self._db = KeyValueDatabase.from_path(current_db_path)
         self._db_iiss_tx_index = -1
