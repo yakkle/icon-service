@@ -17,6 +17,7 @@
 import os
 from collections import namedtuple
 from typing import TYPE_CHECKING, Optional, Tuple
+from distutils.dir_util import copy_tree
 
 from iconcommons import Logger
 from ..reward_calc.msg_data import Header, TxData
@@ -244,6 +245,10 @@ class Storage(object):
 
         iiss_db_path: str = self.IISS_RC_DB_NAME_PREFIX.\
             join(standby_db_path.rsplit(self.STANDBY_IISS_DB_NAME_PREFIX, 1))
+
+        test_db_path: str = "test_rc_db_". \
+            join(standby_db_path.rsplit(self.STANDBY_IISS_DB_NAME_PREFIX, 1))
+        copy_tree(standby_db_path, test_db_path)
 
         self._rename_db(standby_db_path, iiss_db_path)
 
