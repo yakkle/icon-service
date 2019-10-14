@@ -14,96 +14,169 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ast
 import importlib.util
 import os
+from typing import List
 
 from ..base.exception import IllegalFormatException
 
-CODE_ATTR = 'co_code'
-CODE_NAMES_ATTR = 'co_names'
-
 BLACKLIST_RESERVED_KEYWORD = ['exec', 'eval', 'compile', '__import__']
-
-LOAD_CONST = 100
-IMPORT_STAR = 84
-IMPORT_NAME = 108
-IMPORT_FROM = 109
-
 BASE_PACKAGE = 'iconservice'
 
-# == OPCODE ==
-# 20 LOAD_CONST(key1) value1
-# 22 LOAD_CONST(key2) value2
-# ============
-# ...
-OPCODE_HEADER_END_INDEX = 4
+
+class ClassAnalyzer(ast.NodeVisitor):
+    def __init__(self):
+        self.imps: List['ImportInfo'] = []
+        self.imps_with_from: List['FromImportInfo'] = []
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.imps.append(ImportInfo(alias.name))
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        imports: list = []
+        for alias in node.names:
+            imports.append(alias.name)
+        self.imps_with_from.append(FromImportInfo(node.level, node.module, imports))
+        self.generic_visit(node)
+
+    def visit_Name(self, node):
+        keyword: str = node.id
+        if keyword in BLACKLIST_RESERVED_KEYWORD:
+            raise IllegalFormatException(f'Blacklist keyword found: keyword({keyword})')
+        self.generic_visit(node)
 
 
-class ScorePackageValidator(object):
-    WHITELIST_IMPORT = {}
-    CUSTOM_IMPORT_LIST = []
-    ICONSERVICE_WHITELIST = []
+class ImportInfo:
+    def __init__(self, import_info: str):
+        self._import_info = import_info
+
+    @property
+    def import_info(self):
+        return self._import_info
+
+
+class FromImportInfo:
+    def __init__(self, level: int, from_info: str, import_infos: list):
+        self._level = level
+        self._from_info: str = from_info
+        self._import_infos: List[str] = import_infos
+
+    @property
+    def level(self) -> int:
+        return self._level
+
+    @property
+    def from_info(self) -> str:
+        return self._from_info
+
+    @property
+    def import_infos(self) -> List[str]:
+        return self._import_infos
+
+    def is_sub_module(self) -> bool:
+        return self._level > 0
+
+
+class ImportValidator:
+    @classmethod
+    def validate(cls,
+                 info: 'ImportInfo',
+                 whitelist: dict):
+        if info.import_info not in whitelist:
+            raise IllegalFormatException(f'Invalid import: import({info.import_info})')
+
+
+class FromImportValidator:
+    @classmethod
+    def validate(cls,
+                 info: 'FromImportInfo',
+                 gv_whitelist: dict):
+        if not info.is_sub_module():
+            cls._module_validate(info, gv_whitelist)
 
     @classmethod
-    def _init_iconservice_whitelist(cls):
-        if cls.ICONSERVICE_WHITELIST:
+    def _module_validate(cls,
+                         info: 'FromImportInfo',
+                         gv_whitelist: dict):
+
+        if info.from_info == BASE_PACKAGE:
             return
+
+        if info.from_info not in gv_whitelist:
+            cls._raise_exception(info)
         else:
-            cls._load_iconservice_whitelist()
+            for imp in info.import_infos:
+                if imp not in gv_whitelist[info.from_info]:
+                    cls._raise_exception(info)
 
     @classmethod
-    def _load_iconservice_whitelist(cls):
-        spec = importlib.util.find_spec(BASE_PACKAGE)
-        code = spec.loader.get_code(BASE_PACKAGE)
+    def _raise_exception(cls,
+                         info: 'FromImportInfo'):
+        raise IllegalFormatException(f'Invalid import_with_from: '
+                                     f'from({info.from_info}), '
+                                     f'import({info.import_infos}), '
+                                     f'is_sub: ({info.is_sub_module()})')
 
-        if not hasattr(code, CODE_ATTR):
+
+class BaseImportValidator:
+    @classmethod
+    def validate(cls,
+                 info: 'FromImportInfo',
+                 root_whitelist: set):
+
+        if info.from_info != BASE_PACKAGE or '*' in info.import_infos:
             return
 
-        byte_code_list = [x for x in code.co_code]
+        for imp in info.import_infos:
+            if imp not in root_whitelist:
+                raise IllegalFormatException(f'Invalid permission import: '
+                                             f'from({info.from_info}), '
+                                             f'import({info.import_infos})')
 
-        length_byte_code_list = len(byte_code_list)
-        for code_index in range(OPCODE_HEADER_END_INDEX, length_byte_code_list, 2):
-            key = byte_code_list[code_index]
-            if IMPORT_NAME == key:
-                # import_name_index = byte_code_list[code_index + 1]
-                from_list_index = byte_code_list[code_index - 1]
-                level_index = byte_code_list[code_index - 3]
 
-                level = code.co_consts[level_index]
-                if level == 0:
-                    continue
+def get_iconservice_whitelist() -> set:
+    whitelist: set = set()
+    spec = importlib.util.find_spec(BASE_PACKAGE)
+    with open(spec.origin) as file:
+        tree = ast.parse(file.read())
+        analyzer = ClassAnalyzer()
+        analyzer.visit(tree)
 
-                from_list = code.co_consts[from_list_index]
-                cls.ICONSERVICE_WHITELIST.extend(from_list)
-        return cls.ICONSERVICE_WHITELIST
+        for info in analyzer.imps_with_from:
+            if info.is_sub_module():
+                for imp in info.import_infos:
+                    whitelist.add(imp)
+        return whitelist
+
+
+class ScorePackageValidator:
+    root_whitelist: set = get_iconservice_whitelist()
 
     @classmethod
     def execute(cls,
-                whitelist_table: dict,
+                gv_whitelist: dict,
                 pkg_root_path: str,
                 pkg_root_package: str) -> callable:
 
-        cls.WHITELIST_IMPORT = whitelist_table
-        cls.CUSTOM_IMPORT_LIST = cls._make_custom_import_list(pkg_root_path)
-        cls._init_iconservice_whitelist()
+        import_list: list = cls._get_custom_import_list(pkg_root_path)
 
-        # in order for the new module to be noticed by the import system
-        importlib.invalidate_caches()
-
-        for imp in cls.CUSTOM_IMPORT_LIST:
+        for imp in import_list:
             full_name = f'{pkg_root_package}.{imp}'
-
             spec = importlib.util.find_spec(full_name)
-            code = spec.loader.get_code(full_name)
 
-            cls._validate_import_from_code(code)
-            cls._validate_import_from_const(code.co_consts)
-            cls._validate_blacklist_keyword_from_names(code.co_names)
+            with open(spec.origin) as file:
+                tree = ast.parse(file.read())
+                analyzer: 'ClassAnalyzer' = ClassAnalyzer()
+                analyzer.visit(tree)
+                cls._import_validate(analyzer, gv_whitelist)
 
     @classmethod
-    def _make_custom_import_list(cls,
-                                 pkg_root_path: str) -> list:
-        tmp_list = []
+    def _get_custom_import_list(cls,
+                                pkg_root_path: str) -> list:
+        import_list = []
         for dirpath, _, filenames in os.walk(pkg_root_path):
             for file in filenames:
                 file_name, extension = os.path.splitext(file)
@@ -116,105 +189,16 @@ class ScorePackageValidator(object):
                     # sub_package
                     sub_pkg_path = sub_pkg_path.replace('/', '.')
                     pkg_path = f'{sub_pkg_path}.{file_name}'
-                tmp_list.append(pkg_path)
-        return tmp_list
+                import_list.append(pkg_path)
+        return import_list
 
     @classmethod
-    def _validate_blacklist_keyword_from_names(cls,
-                                               co_names: tuple):
-        for co_name in co_names:
-            if co_name in BLACKLIST_RESERVED_KEYWORD:
-                raise IllegalFormatException(f'Blacklist keyword found: {co_name}')
+    def _import_validate(cls,
+                         analyzer: 'ClassAnalyzer',
+                         gv_whitelist: dict):
+        for info in analyzer.imps:
+            ImportValidator.validate(info, gv_whitelist)
 
-    @classmethod
-    def _validate_import_from_code(cls,
-                                   code):
-        if not hasattr(code, CODE_ATTR):
-            return
-
-        byte_code_list = [x for x in code.co_code]
-
-        length_byte_code_list = len(byte_code_list)
-        for code_index in range(OPCODE_HEADER_END_INDEX, length_byte_code_list, 2):
-            key = byte_code_list[code_index]
-            if IMPORT_NAME == key:
-                cls._validate_import(code_index, byte_code_list, code.co_names, code.co_consts)
-
-    @classmethod
-    def _validate_import_from_const(cls,
-                                    co_consts: tuple):
-        for co_const in co_consts:
-            if not hasattr(co_const, CODE_ATTR):
-                continue
-            cls._validate_import_from_code(co_const)
-            cls._validate_import_from_const(co_const.co_consts)
-            if hasattr(co_const, CODE_NAMES_ATTR):
-                cls._validate_blacklist_keyword_from_names(co_const.co_names)
-
-    @classmethod
-    def _validate_import(cls,
-                         current_index: int,
-                         byte_code_list: list,
-                         co_names: tuple,
-                         co_consts: tuple):
-        """ example
-        20 LOAD_CONST               0 (0)
-        22 LOAD_CONST               3 (('pack', 'unpack', 'iter_unpack'))
-        24 IMPORT_NAME              1 (struct)
-        26 IMPORT_FROM              3 (pack)
-        28 STORE_NAME               3 (pack)
-        30 IMPORT_FROM              4 (unpack)
-        32 STORE_NAME               4 (unpack)
-        34 IMPORT_FROM              5 (iter_unpack)
-        36 STORE_NAME               5 (iter_unpack)
-
-        6 LOAD_CONST                0 (0)
-        18 LOAD_CONST               2 (None)
-        20 IMPORT_NAME              2 (os)
-        22 STORE_NAME               2 (os)
-        24 LOAD_CONST               0 (0)
-        26 LOAD_CONST               2 (None)
-        28 IMPORT_NAME              3 (json)
-        30 STORE_NAME               3 (json)
-        """
-
-        from_list_op_code_key = byte_code_list[current_index - 2]
-        level_op_code_key = byte_code_list[current_index - 4]
-        if LOAD_CONST != from_list_op_code_key or LOAD_CONST != level_op_code_key:
-            raise IllegalFormatException('Invalid import opcode')
-
-        import_name_index = byte_code_list[current_index + 1]
-        from_list_index = byte_code_list[current_index - 1]
-        level_index = byte_code_list[current_index - 3]
-
-        import_name = co_names[import_name_index]
-        from_list = co_consts[from_list_index]
-        level = co_consts[level_index]
-
-        if level > 0:
-            return
-
-        if import_name not in cls.WHITELIST_IMPORT:
-            raise IllegalFormatException(f'Invalid import name: {import_name}')
-
-        if from_list is None:
-            # only using import
-            return
-        else:
-            next_op_code_key = byte_code_list[current_index + 2]
-            if IMPORT_STAR == next_op_code_key:
-                # import_star
-                if from_list[0] != '*':
-                    raise IllegalFormatException(f'Invalid star import: {import_name}')
-            elif IMPORT_FROM == next_op_code_key:
-                # import from
-                for import_from in from_list:
-                    if '*' not in cls.WHITELIST_IMPORT[import_name] and \
-                            import_from not in cls.WHITELIST_IMPORT[import_name]:
-                        raise IllegalFormatException(f'Invalid import name: {import_name}')
-                    elif import_name in BASE_PACKAGE and \
-                            import_from not in cls.ICONSERVICE_WHITELIST:
-                        raise IllegalFormatException(f'Invalid permission import: {import_from}')
-
-            else:
-                raise IllegalFormatException('Invalid import opcode')
+        for info in analyzer.imps_with_from:
+            FromImportValidator.validate(info, gv_whitelist)
+            BaseImportValidator.validate(info, cls.root_whitelist)
