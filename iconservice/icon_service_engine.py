@@ -532,6 +532,8 @@ class IconServiceEngine(ContextContainer):
                                        rc_state_hash)
         self._precommit_data_manager.push(precommit_data)
 
+        Logger.debug(tag=ICON_SERVICE_LOG_TAG,
+                     msg=f"Block Batch: \n{precommit_data}")
         return block_result, precommit_data.state_root_hash, added_transactions, main_prep_as_dict
 
     @classmethod
@@ -2018,8 +2020,8 @@ class IconServiceEngine(ContextContainer):
             is_iiss_exists: bool = len(iiss_rc_db_path) > 0
             Logger.info(tag=WAL_LOG_TAG,
                         msg=f"current_exists={is_current_exists}, "
-                            f"is_standby_exists={is_standby_exists}, "
-                            f"is_iiss_exists={is_iiss_exists}")
+                        f"is_standby_exists={is_standby_exists}, "
+                        f"is_iiss_exists={is_iiss_exists}")
 
             # If only current_db exists, replace current_db to standby_rc_db
             if is_current_exists and not is_standby_exists and not is_iiss_exists:
