@@ -493,6 +493,9 @@ class IconServiceEngine(ContextContainer):
             precommit_flag)
         self._precommit_data_manager.push(precommit_data)
 
+        Logger.info(tag=ICON_SERVICE_LOG_TAG,
+                    msg=f"Block Batch: \n{precommit_data}")
+
         return block_result, precommit_data.state_root_hash, added_transactions, main_prep_as_dict
 
     def before_transaction_process(self,
