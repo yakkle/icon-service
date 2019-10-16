@@ -16,7 +16,7 @@
 
 
 import hashlib
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from typing import TYPE_CHECKING, Optional
 from collections.abc import MutableMapping
 
@@ -25,6 +25,7 @@ from ..base.exception import DatabaseException
 if TYPE_CHECKING:
     from ..base.block import Block
 
+TransactionBatchValue = namedtuple('TransactionBatchValue', ['value', 'include_state_root_hash'])
 
 def digest(ordered_dict: OrderedDict):
     # items in data MUST be byte-like objects

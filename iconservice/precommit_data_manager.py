@@ -20,14 +20,35 @@ from typing import TYPE_CHECKING, Optional, List
 
 from .base.block import Block, EMPTY_BLOCK
 from .base.exception import InvalidParamsException
-from .database.batch import BlockBatch
+from .database.batch import BlockBatch, TransactionBatchValue
 from .iconscore.icon_score_mapper import IconScoreMapper
+from .utils import bytes_to_hex
 
 if TYPE_CHECKING:
     from .base.address import Address
     from .prep.data.prep_container import PRepContainer
     from .prep.term import Term
     from .database.batch import ExternalBatch
+
+
+def _print_block_batch(block_batch: 'BlockBatch') -> List[str]:
+    """Print the latest updated states stored in IconServiceEngine
+    :return:
+    """
+    lines = []
+
+    try:
+        for i, key in enumerate(block_batch):
+            value = block_batch[key]
+
+            if isinstance(value, TransactionBatchValue):
+                lines.append(f"{i}: {key.hex()} - {bytes_to_hex(value.value)} - {value.include_state_root_hash}")
+            else:
+                lines.append(f"{i}: {key.hex()} - {bytes_to_hex(value)}")
+    except:
+        pass
+
+    return lines
 
 
 class PrecommitFlag(IntFlag):
@@ -83,6 +104,22 @@ class PrecommitData(object):
 
         self.state_root_hash: bytes = self.block_batch.digest()
         self.block = block_batch.block
+
+    def __str__(self):
+        lines = [
+            f"revision: {self.revision}",
+            f"block: {self.block}",
+            f"state_root_hash: {bytes_to_hex(self.state_root_hash)}",
+            f"prev_block_generator: {self.prev_block_generator}",
+            f"precommit_flag: {self.precommit_flag}"
+            "",
+            "block_batch"
+        ]
+
+        lines.extend(_print_block_batch(self.block_batch))
+
+        lines.append("")
+        return "\n".join(lines)
 
 
 class PrecommitDataManager(object):

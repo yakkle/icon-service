@@ -20,6 +20,7 @@ from typing import Optional
 from .exception import InvalidParamsException
 from ..icon_constant import DATA_BYTE_ORDER, DEFAULT_BYTE_SIZE, REV_IISS
 from ..utils.msgpack_for_db import MsgPackForDB
+from ..utils import bytes_to_hex
 
 
 @unique
@@ -64,6 +65,13 @@ class Block(object):
         self._prev_hash = prev_hash
         # set default value for compatibility with t-bears
         self.cumulative_fee = cumulative_fee
+
+    def __str__(self) -> str:
+        return f"Block(height={self._height}, " \
+            f"hash={bytes_to_hex(self._hash)}, " \
+            f"prev_hash={bytes_to_hex(self._prev_hash)}, " \
+            f"timestamp={self._timestamp}, " \
+            f"cumulative_fee={self.cumulative_fee})"
 
     @property
     def height(self) -> int:
