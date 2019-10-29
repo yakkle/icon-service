@@ -37,6 +37,7 @@ class ExceptionCode(IntEnum):
     INVALID_PACKAGE = 14
     SERVICE_NOT_READY = 15
     INTERNAL_SERVICE_ERROR = 16
+    METHOD_NOT_ALLOWED = 17
 
     # Caused by revert call or user-defined exception.
     SCORE_ERROR = 32
@@ -175,6 +176,11 @@ class ServiceNotReadyException(IconServiceBaseException):
 class InternalServiceErrorException(IconServiceBaseException):
     def __init__(self, message: Optional[str]):
         super().__init__(message, ExceptionCode.INTERNAL_SERVICE_ERROR)
+
+
+class MethodNotAllowedException(IconServiceBaseException):
+    def __init__(self, message: Optional[str]):
+        super().__init__(message, ExceptionCode.METHOD_NOT_ALLOWED)
 
 
 class IconScoreException(IconServiceBaseException):
