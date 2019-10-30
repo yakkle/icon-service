@@ -20,6 +20,7 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Optional, List, Dict, Tuple, Union
 
 from iconcommons.logger import Logger
+
 from .reward_calc.data_creator import DataCreator as RewardCalcDataCreator
 from .reward_calc.ipc.message import CalculateDoneNotification, ReadyNotification
 from .reward_calc.ipc.reward_calc_proxy import RewardCalcProxy
@@ -31,7 +32,7 @@ from ..base.exception import \
 from ..base.type_converter import TypeConverter
 from ..base.type_converter_templates import ConstantKeys, ParamType
 from ..icon_constant import IISS_MAX_DELEGATIONS, ISCORE_EXCHANGE_RATE, IISS_MAX_REWARD_RATE, \
-    IconScoreContextType, IISS_LOG_TAG, RCCalculateResult, INVALID_CLAIM_TX
+    IconScoreContextType, IISS_LOG_TAG, RCCalculateResult, INVALID_CLAIM_TX, PRepStatus
 from ..iconscore.icon_score_context import IconScoreContext
 from ..iconscore.icon_score_event_log import EventLogEmitter
 from ..icx import Intent
@@ -39,6 +40,7 @@ from ..icx.icx_account import Account
 from ..icx.issue.issue_formula import IssueFormula
 from ..iiss.reward_calc.storage import get_rc_version
 from ..precommit_data_manager import PrecommitFlag
+from ..prep.data.prep import PRep
 from ..utils import bytes_to_hex
 
 if TYPE_CHECKING:
@@ -76,7 +78,8 @@ class Engine(EngineBase):
         self._invoke_handlers: dict = {
             'setStake': self.handle_set_stake,
             'setDelegation': self.handle_set_delegation,
-            'claimIScore': self.handle_claim_iscore
+            'claimIScore': self.handle_claim_iscore,
+            'payFine': self.handle_pay_fine,
         }
 
         self._query_handler: dict = {
@@ -89,7 +92,8 @@ class Engine(EngineBase):
         self._reward_calc_proxy: Optional['RewardCalcProxy'] = None
         self._listeners: List['EngineListener'] = []
 
-    def open(self, context: 'IconScoreContext', log_dir: str, data_path: str, socket_path: str, ipc_timeout: int, icon_rc_path: str):
+    def open(self, context: 'IconScoreContext', log_dir: str, data_path: str, socket_path: str, ipc_timeout: int,
+             icon_rc_path: str):
         self._init_reward_calc_proxy(log_dir, data_path, socket_path, ipc_timeout, icon_rc_path)
 
     def add_listener(self, listener: 'EngineListener'):
@@ -149,10 +153,10 @@ class Engine(EngineBase):
             raise FatalException(f'Invalid I-SCORE value: {iscore}')
 
         Logger.debug(tag=_TAG, msg=f"query_calculate_result() end: "
-                                   f"status={calc_result_status}, "
-                                   f"calc_result_bh={calc_result_bh}, "
-                                   f"iscore={iscore}, "
-                                   f"state_hash={bytes_to_hex(state_hash)}")
+        f"status={calc_result_status}, "
+        f"calc_result_bh={calc_result_bh}, "
+        f"iscore={iscore}, "
+        f"state_hash={bytes_to_hex(state_hash)}")
 
         return iscore, calc_result_bh, state_hash
 
@@ -182,7 +186,8 @@ class Engine(EngineBase):
         IconScoreContext.storage.rc.put_calc_response_from_rc(cb_data.iscore, cb_data.block_height, cb_data.state_hash)
         Logger.debug(tag=_TAG, msg=f"calculate done callback called with {cb_data}")
 
-    def _init_reward_calc_proxy(self, log_dir: str, data_path: str, socket_path: str, ipc_timeout: int, icon_rc_path: str):
+    def _init_reward_calc_proxy(self, log_dir: str, data_path: str, socket_path: str, ipc_timeout: int,
+                                icon_rc_path: str):
         self._reward_calc_proxy = RewardCalcProxy(calc_done_callback=self.calculate_done_callback,
                                                   ready_callback=self.ready_callback,
                                                   ipc_timeout=ipc_timeout,
@@ -599,6 +604,76 @@ class Engine(EngineBase):
             indexed_args_count=0
         )
         Logger.debug(tag=_TAG, msg="handle_claim_iscore() end")
+
+    def handle_pay_fine(self,
+                        context: 'IconScoreContext',
+                        _params: dict):
+        """Handles payFine JSON-RPC request
+
+        :param context:
+        :param _params:
+        :return:
+        """
+        Logger.debug(tag=_TAG, msg="handle_pay_fine() start")
+
+        ret_params: dict = TypeConverter.convert(_params, ParamType.IISS_PAY_FINE)
+        clear: bool = ret_params[ConstantKeys.CLEAR]
+
+        eventlog_arguments: List[List['Address', int, int], ...] = self._pay_fine(context, clear)
+
+        # TODO: When there are no more delegations, which kind of event log is needed? Now it is just [].
+        EventLogEmitter.emit_event_log(context,
+                                       score_address=ZERO_SCORE_ADDRESS,
+                                       event_signature="FinePaid(address,int,int)",
+                                       arguments=eventlog_arguments)
+
+        Logger.debug(tag=_TAG, msg="handle_pay_fine() end")
+
+    def _pay_fine(self, context: 'IconScoreContext', clear: bool) -> List[List['Address', int, int], ...]:
+        total_fine_amount: int = 0
+
+        address: 'Address' = context.tx.origin
+        account: 'Account' = context.storage.icx.get_account(context, address, Intent.ALL)
+        updated_delegations: List[Tuple['Address', int]] = []
+        cached_accounts: Dict['Address', Tuple['Account', int]] = {address: (account, 0)}
+        eventlog_arguments: List[List['Address', int, int], ...] = []
+
+        for prep_address, delegated_amount in account.delegations:
+            prep: Optional['PRep'] = context.engine.prep.preps.get_by_address(prep_address)
+            fine_amount: int = 0
+
+            if prep.status == PRepStatus.DISQUALIFIED:
+                offset: int = 0
+                fine_amount: int = int(delegated_amount * 0.06)
+                total_fine_amount += fine_amount
+                prep_account: 'Account' = context.storage.icx.get_account(context, address, Intent.DELEGATED)
+
+                if not clear:
+                    delegated_amount -= fine_amount
+                    offset = -fine_amount
+                    eventlog_arguments.append([prep_address, fine_amount, delegated_amount])
+
+                cached_accounts[prep.address] = prep_account, offset
+
+            if clear:
+                delegated_amount = 0
+                eventlog_arguments.append([prep_address, fine_amount, delegated_amount])
+
+            updated_delegations.append(prep_address, delegated_amount)
+
+        # TODO: implementing 'burn_staked_icx' method
+        updated_delegated_accounts: List['Account'] = self._put_delegation_to_state_db(context,
+                                                                                       address,
+                                                                                       updated_delegations,
+                                                                                       cached_accounts)
+        context.engine.issue.burn_staked_icx(context, address, total_fine_amount)
+        self._put_delegation_to_rc_db(context, address, updated_delegations)
+
+        for listener in self._listeners:
+            listener.on_set_delegation(context, updated_delegated_accounts)
+            listener.on_set_stake(context, account)
+
+        return eventlog_arguments
 
     @staticmethod
     def _check_claim_tx(context: 'IconScoreContext') -> bool:

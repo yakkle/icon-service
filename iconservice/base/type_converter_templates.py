@@ -60,6 +60,7 @@ class ParamType(IntEnum):
     IISS_GET_MAIN_PREP_LIST = 712
     IISS_GET_PREP_LIST = 713
     IISS_SET_GOVERNANCE_VARIABLES = 714
+    IISS_PAY_FINE = 715
 
 
 class ValueType(IntEnum):
@@ -177,6 +178,7 @@ class ConstantKeys:
     END_RANKING = "endRanking"
     IREP = "irep"
     IREP_BLOCK_HEIGHT = "irepUpdateBlockHeight"
+    CLEAR = 'clear'
 
 
 type_convert_templates[ParamType.BLOCK] = {
@@ -394,4 +396,8 @@ type_convert_templates[ParamType.IISS_GET_PREP_LIST] = {
 
 type_convert_templates[ParamType.IISS_SET_GOVERNANCE_VARIABLES] = {
     ConstantKeys.IREP: ValueType.INT
+}
+
+type_convert_templates[ParamType.IISS_PAY_FINE] = {
+    ConstantKeys.CLEAR: ValueType.BOOL
 }
