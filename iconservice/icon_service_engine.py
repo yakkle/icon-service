@@ -2080,6 +2080,9 @@ class IconServiceEngine(ContextContainer):
 
         # Write data to "current_db"
         current_db.write_batch(reader.get_iterator(0))
+        for key, value in reader.get_iterator(0):
+            Logger.info(tag=WAL_LOG_TAG, msg=f"covered rc db data: key: {key}, value: {value}")
+        Logger.info(tag=WAL_LOG_TAG, msg="_recover_rc_db() end")
         current_db.close()
 
         Logger.debug(tag=WAL_LOG_TAG, msg="_recover_rc_db() end")
