@@ -124,6 +124,8 @@ class IissWAL(WALogable):
             if isinstance(iiss_data, TxData):
                 tx_index += 1
                 key: bytes = iiss_data.make_key(tx_index)
+                Logger.info(tag=TAG,
+                            msg=f"put tx index: {tx_index} data: {iiss_data.block_height}")
             else:
                 key: bytes = iiss_data.make_key()
             value: bytes = iiss_data.make_value()
