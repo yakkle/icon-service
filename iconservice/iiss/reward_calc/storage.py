@@ -216,27 +216,12 @@ class Storage(object):
 
         rc_version, _ = self.get_version_and_revision()
         rc_version: int = max(rc_version, 0)
-        tx_count = 0
-        bp_count = 0
-        for key, value in self._db.iterator():
-            if key[:2] == TxData.PREFIX:
-                tx_count += 1
-            if key[:2] == BlockProduceInfoData.PREFIX:
-                bp_count += 1
-            if key[:2] == Header.PREFIX:
-                hd = Header.from_bytes(value)
-                Logger.info(tag=IISS_LOG_TAG, msg=f"Before close header info: {hd}")
-            if key[:2] == GovernanceVariable.PREFIX:
-                gv = GovernanceVariable.from_bytes(key, value)
-                Logger.info(tag=IISS_LOG_TAG, msg=f"Before close gv info: {gv}")
-            if key == b'version_and_revision':
-                version, revision = MsgPackForDB.loads(value)
-                Logger.info(tag=IISS_LOG_TAG, msg=f"version: {version} revision: {revision}")
-        Logger.info(tag=IISS_LOG_TAG, msg=f"Before close tx count: {tx_count} bp count: {bp_count}")
 
         self._db.close()
         prev_db_path: str = os.path.join(self._path, self._db_name)
+        new_db_path: str = os.path.join(self._path, self._db_name + "_renamed")
         time.sleep(5)
+        self._rename_db(prev_db_path, new_db_path)
         closed_db = KeyValueDatabase.from_path(prev_db_path)
         tx_count = 0
         bp_count = 0
@@ -260,7 +245,16 @@ class Storage(object):
         self.create_db(self._path, block_height, rc_version)
         # self._db = self.create_current_db(self._path)
 
-        return RewardCalcDBInfo(prev_db_path, block_height)
+        return RewardCalcDBInfo(new_db_path, block_height)
+
+    @staticmethod
+    def _rename_db(old_db_path: str, new_db_path: str):
+        if os.path.exists(old_db_path) and not os.path.exists(new_db_path):
+            os.rename(old_db_path, new_db_path)
+            Logger.info(tag=IISS_LOG_TAG, msg=f"Rename db: {old_db_path} -> {new_db_path}")
+        else:
+            raise DatabaseException("Cannot create IISS DB because of invalid path. Check both IISS "
+                                    "current DB path and IISS DB path")
 
     @classmethod
     def create_current_db(cls, rc_data_path: str) -> 'KeyValueDatabase':
