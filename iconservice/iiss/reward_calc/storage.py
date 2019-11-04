@@ -219,7 +219,9 @@ class Storage(object):
 
         with open("rc_db_data.txt", "a") as f:
             for key, value in self._db.iterator():
-                f.write(key+value)
+                b_data: bytes = key + value
+                b_data.hex()
+                f.write(b_data.hex())
 
         self._db.close()
 
@@ -227,9 +229,10 @@ class Storage(object):
         bp_count = 0
         with open("rc_db_data.txt", "r") as f:
             for data in f.readlines():
-                if data[:2] == TxData.PREFIX:
+                bytes_data = bytes.fromhex(data)
+                if bytes_data[:2] == TxData.PREFIX:
                     tx_count += 1
-                if data[:2] == BlockProduceInfoData.PREFIX:
+                if bytes_data[:2] == BlockProduceInfoData.PREFIX:
                     bp_count += 1
 
         Logger.info(tag=IISS_LOG_TAG, msg=f"temp file tx count: {tx_count} bp count: {bp_count}")
