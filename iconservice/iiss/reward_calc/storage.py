@@ -15,6 +15,8 @@
 # limitations under the License.
 
 import os
+import shutil
+import time
 from collections import namedtuple
 from typing import TYPE_CHECKING, Optional, Tuple
 
@@ -215,8 +217,9 @@ class Storage(object):
         rc_version, _ = self.get_version_and_revision()
         rc_version: int = max(rc_version, 0)
         self._db.close()
+        time.sleep(5)
         prev_db_path: str = os.path.join(self._path, self._db_name)
-
+        shutil.copytree(prev_db_path, prev_db_path + "_is_backup")
         self.create_db(self._path, block_height, rc_version)
         # self._db = self.create_current_db(self._path)
 
