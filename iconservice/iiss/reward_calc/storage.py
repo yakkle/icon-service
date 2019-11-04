@@ -217,53 +217,11 @@ class Storage(object):
         rc_version, _ = self.get_version_and_revision()
         rc_version: int = max(rc_version, 0)
 
-        # with open(f"rc_data.txt", "a") as f:
-        #     for key, value in self._db.iterator():
-        #         b_data: bytes = key + value
-        #         b_data.hex()
-        #         f.write(b_data.hex() + os.linesep)
-        #         f.flush()
         prev_db_path: str = os.path.join(self._path, self._db_name)
         self._db.close()
-        # tx_count = 0
-        # bp_count = 0
-        # with open(f"rc_data.txt", "r") as f:
-        #     for data in f.readlines():
-        #         bytes_data = bytes.fromhex(data[:-1])
-        #         if bytes_data[:2] == TxData.PREFIX:
-        #             tx_count += 1
-        #         if bytes_data[:2] == BlockProduceInfoData.PREFIX:
-        #             bp_count += 1
-        # Logger.info(tag=IISS_LOG_TAG, msg=f"temp file tx count: {tx_count} bp count: {bp_count}")
-
-        #
-        # time.sleep(5)
-
-        # new_db_path: str = os.path.join(self._path, self._db_name + "_renamed")
-        # self._rename_db(prev_db_path, new_db_path)
-        # closed_db = KeyValueDatabase.from_path(new_db_path)
-        # tx_count = 0
-        # bp_count = 0
-        # for key, value in closed_db.iterator():
-        #     if key[:2] == TxData.PREFIX:
-        #         tx_count += 1
-        #     if key[:2] == BlockProduceInfoData.PREFIX:
-        #         bp_count += 1
-        #     if key[:2] == Header.PREFIX:
-        #         hd = Header.from_bytes(value)
-        #         Logger.info(tag=IISS_LOG_TAG, msg=f"After close header info: {hd}")
-        #     if key[:2] == GovernanceVariable.PREFIX:
-        #         gv = GovernanceVariable.from_bytes(key, value)
-        #         Logger.info(tag=IISS_LOG_TAG, msg=f"After close gv info: {gv}")
-        #     if key == b'version_and_revision':
-        #         version, revision = MsgPackForDB.loads(value)
-        #         Logger.info(tag=IISS_LOG_TAG, msg=f"version: {version} revision: {revision}")
-        # Logger.info(tag=IISS_LOG_TAG, msg=f"After close tx count: {tx_count} bp count: {bp_count}")
-        #
-        # shutil.copytree(prev_db_path, prev_db_path + "_is_backup")
-
+        db = KeyValueDatabase.from_path(prev_db_path)
+        db.close()
         self.create_db(self._path, block_height, rc_version)
-        # self._db = self.create_current_db(self._path)
 
         return RewardCalcDBInfo(prev_db_path, block_height)
 
