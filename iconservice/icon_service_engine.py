@@ -1938,7 +1938,8 @@ class IconServiceEngine(ContextContainer):
         wal_writer.flush()
 
         if rc_db_info is not None:
-            context.engine.iiss.send_calculate(rc_db_info.path, rc_db_info.block_height)
+            if context.block.height < 10400000:
+                context.engine.iiss.send_calculate(rc_db_info.path, rc_db_info.block_height)
             wal_writer.write_state(WALState.SEND_CALCULATE.value, add=True)
 
     def rollback(self, block_height: int, instant_block_hash: bytes) -> None:
