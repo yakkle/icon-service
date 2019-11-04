@@ -21,7 +21,7 @@ from collections import namedtuple
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from iconcommons import Logger
-from ..reward_calc.msg_data import Header, TxData, PRepsData
+from ..reward_calc.msg_data import Header, TxData, PRepsData, BlockProduceInfoData, GovernanceVariable
 from ...base.exception import DatabaseException
 from ...database.db import KeyValueDatabase
 from ...icon_constant import (
@@ -216,9 +216,46 @@ class Storage(object):
 
         rc_version, _ = self.get_version_and_revision()
         rc_version: int = max(rc_version, 0)
+        tx_count = 0
+        bp_count = 0
+        for key, value in self._db.iterator():
+            if key[:2] == TxData.PREFIX:
+                tx_count += 1
+            if key[:2] == BlockProduceInfoData.PREFIX:
+                bp_count += 1
+            if key[:2] == Header.PREFIX:
+                hd = Header.from_bytes(value)
+                Logger.info(tag=IISS_LOG_TAG, msg=f"Before close header info: {hd}")
+            if key[:2] == GovernanceVariable.PREFIX:
+                gv = GovernanceVariable.from_bytes(key, value)
+                Logger.info(tag=IISS_LOG_TAG, msg=f"Before close gv info: {gv}")
+            if key == b'version_and_revision':
+                version, revision = MsgPackForDB.loads(value)
+                Logger.info(tag=IISS_LOG_TAG, msg=f"version: {version} revision: {revision}")
+        Logger.info(tag=IISS_LOG_TAG, msg=f"Before close tx count: {tx_count} bp count: {bp_count}")
+
         self._db.close()
-        time.sleep(5)
         prev_db_path: str = os.path.join(self._path, self._db_name)
+        time.sleep(5)
+        closed_db = KeyValueDatabase.from_path(prev_db_path)
+        tx_count = 0
+        bp_count = 0
+        for key, value in closed_db.iterator():
+            if key[:2] == TxData.PREFIX:
+                tx_count += 1
+            if key[:2] == BlockProduceInfoData.PREFIX:
+                bp_count += 1
+            if key[:2] == Header.PREFIX:
+                hd = Header.from_bytes(value)
+                Logger.info(tag=IISS_LOG_TAG, msg=f"After close header info: {hd}")
+            if key[:2] == GovernanceVariable.PREFIX:
+                gv = GovernanceVariable.from_bytes(key, value)
+                Logger.info(tag=IISS_LOG_TAG, msg=f"After close gv info: {gv}")
+            if key == b'version_and_revision':
+                version, revision = MsgPackForDB.loads(value)
+                Logger.info(tag=IISS_LOG_TAG, msg=f"version: {version} revision: {revision}")
+        Logger.info(tag=IISS_LOG_TAG, msg=f"After close tx count: {tx_count} bp count: {bp_count}")
+
         shutil.copytree(prev_db_path, prev_db_path + "_is_backup")
         self.create_db(self._path, block_height, rc_version)
         # self._db = self.create_current_db(self._path)
