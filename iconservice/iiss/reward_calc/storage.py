@@ -222,7 +222,7 @@ class Storage(object):
         new_db_path: str = os.path.join(self._path, self._db_name + "_renamed")
         time.sleep(5)
         self._rename_db(prev_db_path, new_db_path)
-        closed_db = KeyValueDatabase.from_path(prev_db_path)
+        closed_db = KeyValueDatabase.from_path(new_db_path)
         tx_count = 0
         bp_count = 0
         for key, value in closed_db.iterator():
