@@ -229,12 +229,11 @@ class Storage(object):
         Logger.info(tag=IISS_LOG_TAG, msg=f"Create new current_db")
         return KeyValueDatabase.from_path(current_db_path, create_if_missing=True)
 
-    @classmethod
-    def create_db(cls, rc_data_path: str, block_height: int, rc_version: int):
-        new_db_name: str = cls.get_rc_db_name(block_height, rc_version)
+    def create_db(self, rc_data_path: str, block_height: int, rc_version: int):
+        new_db_name: str = self.get_rc_db_name(block_height, rc_version)
         new_db_path: str = os.path.join(rc_data_path, new_db_name)
-        cls._db = KeyValueDatabase.from_path(new_db_path, create_if_missing=True)
-        cls._db_name = new_db_name
+        self._db = KeyValueDatabase.from_path(new_db_path, create_if_missing=True)
+        self._db_name = new_db_name
 
     @classmethod
     def rename_standby_db_to_iiss_db(cls, standby_db_path: str) -> str:

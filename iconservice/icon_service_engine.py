@@ -2060,9 +2060,9 @@ class IconServiceEngine(ContextContainer):
                 rc_version: int = max(rc_version, 0)
                 prev_calc_db.close()
 
-                standby_rc_db_path: str = RewardCalcStorage.create_db(rc_data_path,
-                                                                      reader.block.height,
-                                                                      rc_version)
+                # standby_rc_db_path: str = RewardCalcStorage.create_db(rc_data_path,
+                #                                                       reader.block.height,
+                #                                                       rc_version)
                 is_standby_exists: bool = True
             elif not is_current_exists and not is_standby_exists:
                 # No matter iiss_db exists or not, If both current_db and standby_db do not exist, raise error
