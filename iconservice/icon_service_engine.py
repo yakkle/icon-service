@@ -1808,7 +1808,7 @@ class IconServiceEngine(ContextContainer):
         wal_writer.flush()
 
         # Write iiss_wal to rc_db
-        standby_db_info: Optional['RewardCalcDBInfo'] = \
+        rc_db_info: Optional['RewardCalcDBInfo'] = \
             self._process_iiss_commit(context, precommit_data, iiss_wal, is_calc_period_start_block)
         wal_writer.write_state(WALState.WRITE_RC_DB.value, add=True)
         wal_writer.flush()
@@ -1819,7 +1819,7 @@ class IconServiceEngine(ContextContainer):
         wal_writer.flush()
 
         # send IPC
-        self._process_ipc(context, wal_writer, precommit_data, standby_db_info, instant_block_hash)
+        self._process_ipc(context, wal_writer, precommit_data, rc_db_info, instant_block_hash)
         wal_writer.close()
 
         try:
@@ -1910,20 +1910,20 @@ class IconServiceEngine(ContextContainer):
         assert precommit_data.revision >= Revision.IISS.value
         assert isinstance(iiss_wal, IissWAL)
 
-        standby_db_info: Optional['RewardCalcDBInfo'] = None
+        rc_db_info: Optional['RewardCalcDBInfo'] = None
         if is_calc_period_start_block:
             calculate_block_height: int = context.block.height - 1
-            standby_db_info: 'RewardCalcDBInfo' = context.storage.rc.replace_db(calculate_block_height)
+            rc_db_info: 'RewardCalcDBInfo' = context.storage.rc.replace_db(calculate_block_height)
 
         context.engine.prep.commit(context, precommit_data)
         context.storage.rc.commit(iiss_wal)
-        return standby_db_info
+        return rc_db_info
 
     @staticmethod
     def _process_ipc(context: 'IconScoreContext',
                      wal_writer: 'WriteAheadLogWriter',
                      precommit_data: 'PrecommitData',
-                     standby_db_info: Optional['RewardCalcDBInfo'],
+                     rc_db_info: Optional['RewardCalcDBInfo'],
                      instant_block_hash: bytes):
         assert precommit_data.revision >= Revision.IISS.value
 
@@ -1937,9 +1937,8 @@ class IconServiceEngine(ContextContainer):
         wal_writer.write_state(WALState.SEND_COMMIT_BLOCK.value, add=True)
         wal_writer.flush()
 
-        if standby_db_info is not None:
-            iiss_db_path: str = context.storage.rc.rename_standby_db_to_iiss_db(standby_db_info.path)
-            context.engine.iiss.send_calculate(iiss_db_path, standby_db_info.block_height)
+        if rc_db_info is not None:
+            context.engine.iiss.send_calculate(rc_db_info.path, rc_db_info.block_height)
             wal_writer.write_state(WALState.SEND_CALCULATE.value, add=True)
 
     def rollback(self, block_height: int, instant_block_hash: bytes) -> None:
@@ -2061,9 +2060,9 @@ class IconServiceEngine(ContextContainer):
                 rc_version: int = max(rc_version, 0)
                 prev_calc_db.close()
 
-                standby_rc_db_path: str = RewardCalcStorage.rename_current_db_to_standby_db(rc_data_path,
-                                                                                            reader.block.height,
-                                                                                            rc_version)
+                standby_rc_db_path: str = RewardCalcStorage.create_db(rc_data_path,
+                                                                      reader.block.height,
+                                                                      rc_version)
                 is_standby_exists: bool = True
             elif not is_current_exists and not is_standby_exists:
                 # No matter iiss_db exists or not, If both current_db and standby_db do not exist, raise error

@@ -73,6 +73,7 @@ class Storage(object):
     def __init__(self):
         self._path: str = ""
         self._db: Optional['KeyValueDatabase'] = None
+        self._db_name: str = None
         # 'None' if open() is not called else 'int'
         self._db_iiss_tx_index: int = -1
 
@@ -83,7 +84,12 @@ class Storage(object):
             raise DatabaseException(f"Invalid IISS DB path: {path}")
         self._path = path
 
-        self._db = self.create_current_db(path)
+        current_db_path = os.path.join(path, self.CURRENT_IISS_DB_NAME)
+
+        Logger.info(tag=IISS_LOG_TAG, msg=f"load prev current_db")
+
+        self._db = KeyValueDatabase.from_path(current_db_path, create_if_missing=True)
+        self._db_name = self.CURRENT_IISS_DB_NAME
 
         self._db_iiss_tx_index = self._load_last_transaction_index()
         Logger.info(tag=IISS_LOG_TAG, msg=f"last_transaction_index on open={self._db_iiss_tx_index}")
@@ -118,8 +124,8 @@ class Storage(object):
             Logger.debug(tag=IISS_LOG_TAG, msg=f"No header data. Put Header to db on open: {str(header)}")
 
     @classmethod
-    def get_standby_rc_db_name(cls, block_height: int, rc_version: int) -> str:
-        return f"{cls.STANDBY_IISS_DB_NAME_PREFIX}{block_height}_{rc_version}"
+    def get_rc_db_name(cls, block_height: int, rc_version: int) -> str:
+        return f"{cls.CURRENT_IISS_DB_NAME}_{block_height}_{rc_version}"
 
     def put_data_directly(self, iiss_data: 'Data', tx_index: Optional[int] = None):
         if isinstance(iiss_data, TxData):
@@ -194,15 +200,6 @@ class Storage(object):
         else:
             return int.from_bytes(encoded_last_index, DATA_BYTE_ORDER)
 
-    @staticmethod
-    def _rename_db(old_db_path: str, new_db_path: str):
-        if os.path.exists(old_db_path) and not os.path.exists(new_db_path):
-            os.rename(old_db_path, new_db_path)
-            Logger.info(tag=IISS_LOG_TAG, msg=f"Rename db: {old_db_path} -> {new_db_path}")
-        else:
-            raise DatabaseException("Cannot create IISS DB because of invalid path. Check both IISS "
-                                    "current DB path and IISS DB path")
-
     def replace_db(self, block_height: int) -> 'RewardCalcDBInfo':
         """
         1. Rename current_db to standby_db_{block_height}_{rc_version}
@@ -218,11 +215,12 @@ class Storage(object):
         rc_version, _ = self.get_version_and_revision()
         rc_version: int = max(rc_version, 0)
         self._db.close()
+        prev_db_path: str = os.path.join(self._path, self._db_name)
 
-        standby_db_path: str = self.rename_current_db_to_standby_db(self._path, block_height, rc_version)
-        self._db = self.create_current_db(self._path)
+        self.create_db(self._path, block_height, rc_version)
+        # self._db = self.create_current_db(self._path)
 
-        return RewardCalcDBInfo(standby_db_path, block_height)
+        return RewardCalcDBInfo(prev_db_path, block_height)
 
     @classmethod
     def create_current_db(cls, rc_data_path: str) -> 'KeyValueDatabase':
@@ -232,14 +230,11 @@ class Storage(object):
         return KeyValueDatabase.from_path(current_db_path, create_if_missing=True)
 
     @classmethod
-    def rename_current_db_to_standby_db(cls, rc_data_path: str, block_height: int, rc_version: int) -> str:
-        current_db_path: str = os.path.join(rc_data_path, cls.CURRENT_IISS_DB_NAME)
-        standby_db_name: str = cls.get_standby_rc_db_name(block_height, rc_version)
-        standby_db_path: str = os.path.join(rc_data_path, standby_db_name)
-
-        cls._rename_db(current_db_path, standby_db_path)
-
-        return standby_db_path
+    def create_db(cls, rc_data_path: str, block_height: int, rc_version: int):
+        new_db_name: str = cls.get_rc_db_name(block_height, rc_version)
+        new_db_path: str = os.path.join(rc_data_path, new_db_name)
+        cls._db = KeyValueDatabase.from_path(new_db_path, create_if_missing=True)
+        cls._db_name = new_db_name
 
     @classmethod
     def rename_standby_db_to_iiss_db(cls, standby_db_path: str) -> str:
@@ -247,7 +242,7 @@ class Storage(object):
         iiss_db_path: str = cls.IISS_RC_DB_NAME_PREFIX.\
             join(standby_db_path.rsplit(cls.STANDBY_IISS_DB_NAME_PREFIX, 1))
 
-        cls._rename_db(standby_db_path, iiss_db_path)
+        # cls._rename_db(standby_db_path, iiss_db_path)
 
         return iiss_db_path
 
