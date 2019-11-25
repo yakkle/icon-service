@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from enum import auto, Flag, IntEnum, Enum
+from enum import auto, Flag, IntEnum, Enum, unique
 from typing import TYPE_CHECKING, Tuple, Any
 
 import iso3166
@@ -22,11 +22,18 @@ from .sorted_list import Sortable
 from ... import utils
 from ...base.exception import AccessDeniedException
 from ...base.type_converter_templates import ConstantKeys
-from ...icon_constant import PRepGrade, PRepStatus, PenaltyReason, Revision
+from ...icon_constant import PRepGrade, PRepStatus, PenaltyReason, Revision, IISS_MAX_SLASH_RATE
 from ...utils.msgpack_for_db import MsgPackForDB
 
 if TYPE_CHECKING:
     from iconservice.base.address import Address
+
+
+@unique
+class PrepVersion(IntEnum):
+    PREVOTE = 0
+    DECENTRALIZATION = auto()
+    SLASHING = auto()
 
 
 class PRepFlag(Flag):
@@ -42,7 +49,6 @@ class PRepDictType(Enum):
 
 class PRep(Sortable):
     PREFIX: bytes = b"prep"
-    _VERSION: int = 1
     _UNKNOWN_COUNTRY = iso3166.Country(u"Unknown", "ZZ", "ZZZ", "000", u"Unknown")
 
     class Index(IntEnum):
@@ -71,6 +77,9 @@ class PRep(Sortable):
         PENALTY = auto()
         UNVALIDATED_SEQUENCE_BLOCKS = auto()
 
+        # Version: SLASHING
+        SLASHING_RATES = auto()
+
         # Unused
         SIZE = auto()
 
@@ -97,7 +106,8 @@ class PRep(Sortable):
             tx_index: int = 0,
             total_blocks: int = 0,
             validated_blocks: int = 0,
-            unvalidated_sequence_blocks: int = 0):
+            unvalidated_sequence_blocks: int = 0,
+            slash_rates: int = 0):
         """
         Main PRep: top 1 ~ 22 preps in descending order by delegated amount
         Sub PRep: 23 ~ 100 preps
@@ -124,6 +134,7 @@ class PRep(Sortable):
         :param total_blocks:
         :param validated_blocks:
         :param unvalidated_sequence_blocks
+        :param slash_rates:
         """
         # key
         self._address: 'Address' = address
@@ -163,6 +174,7 @@ class PRep(Sortable):
         self._total_blocks: int = total_blocks
         self._validated_blocks: int = validated_blocks
         self._unvalidated_sequence_blocks: int = unvalidated_sequence_blocks
+        self._slash_rates: int = slash_rates
 
         # This field is used to save delegated amount at the beginning of a term
         # DO NOT STORE THIS TO DB
@@ -189,6 +201,16 @@ class PRep(Sortable):
     @property
     def penalty(self) -> 'PenaltyReason':
         return self._penalty
+
+    @property
+    def slash_rates(self) -> int:
+        return self._slash_rates
+
+    @slash_rates.setter
+    def slash_rates(self, rates: int):
+        assert 0 <= rates <= IISS_MAX_SLASH_RATE
+        self._slash_rates = rates
+        self._set_dirty(True)
 
     def is_suspended(self) -> bool:
         """The suspended P-Rep cannot serve as Main P-Rep during this term
@@ -352,6 +374,12 @@ class PRep(Sortable):
     def make_key(cls, address: 'Address') -> bytes:
         return cls.PREFIX + address.to_bytes_including_prefix()
 
+    def is_disqualified(self) -> bool:
+        return self._status.value == PRepStatus.DISQUALIFIED.value
+
+    def is_unregistered(self) -> bool:
+        return self._status.value == PRepStatus.UNREGISTERED.value
+
     def is_frozen(self) -> bool:
         return bool(self._flags & PRepFlag.FROZEN)
 
@@ -426,8 +454,17 @@ class PRep(Sortable):
         """
         return -self._delegated, self._block_height, self._tx_index
 
+    @staticmethod
+    def get_version(revision: int) -> PrepVersion:
+        if revision < Revision.DECENTRALIZATION.value:
+            return PrepVersion.PREVOTE
+        elif revision < Revision.SLASHING.value:
+            return PrepVersion.DECENTRALIZATION
+        else:
+            return PrepVersion.SLASHING
+
     def to_bytes(self, revision: int) -> bytes:
-        version: int = 1 if revision >= Revision.DECENTRALIZATION.value else 0
+        version: 'PrepVersion' = self.get_version(revision)
 
         data = [
             version,
@@ -454,21 +491,26 @@ class PRep(Sortable):
             self._validated_blocks,
         ]
 
-        if version >= 1:
+        if version.value >= PrepVersion.DECENTRALIZATION:
             data.extend((self.penalty.value, self._unvalidated_sequence_blocks))
+        if version.value >= PrepVersion.SLASHING:
+            data.append(self.slash_rates)
 
         return MsgPackForDB.dumps(data)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> 'PRep':
         items: list = MsgPackForDB.loads(data)
-        version: int = items[cls.Index.VERSION]
+        # TODO: refactor this point
+        version: PrepVersion = PrepVersion(items[cls.Index.VERSION])
 
-        if version == 0:
+        if version.value == PrepVersion.PREVOTE:
             items.extend((PenaltyReason.NONE, 0))
+        if version.value < PrepVersion.SLASHING:
+            items.append(0)
 
         return PRep(
-            # version 0
+            # version PREVOTE
             address=items[cls.Index.ADDRESS],
             status=PRepStatus(items[cls.Index.STATUS]),
             grade=PRepGrade(items[cls.Index.GRADE]),
@@ -487,9 +529,12 @@ class PRep(Sortable):
             total_blocks=items[cls.Index.TOTAL_BLOCKS],
             validated_blocks=items[cls.Index.VALIDATED_BLOCKS],
 
-            # version 1
+            # version DECENTRALIZATION
             penalty=PenaltyReason(items[cls.Index.PENALTY]),
-            unvalidated_sequence_blocks=items[cls.Index.UNVALIDATED_SEQUENCE_BLOCKS]
+            unvalidated_sequence_blocks=items[cls.Index.UNVALIDATED_SEQUENCE_BLOCKS],
+
+            # version SLASHING
+            slash_rates=items[cls.Index.SLASHING_RATES]
         )
 
     @staticmethod

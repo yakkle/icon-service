@@ -136,7 +136,7 @@ class Engine(EngineBase):
         total_stake: int = context.storage.iiss.get_total_stake(context)
         current_total_supply: int = context.storage.icx.get_total_supply(context)
 
-        account.subtract_stake(amount)
+        account.burn_from_staked(amount)
         total_stake -= amount
         burned_total_supply: int = current_total_supply - amount
 

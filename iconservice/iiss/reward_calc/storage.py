@@ -179,7 +179,6 @@ class Storage(object):
         self._db_iiss_tx_index = iiss_wal.final_tx_index
         Logger.info(tag=IISS_LOG_TAG, msg=f"final_tx_index={iiss_wal.final_tx_index}")
 
-    # todo: naming
     def _put_version_and_revision(self, revision: int):
         version: int = get_rc_version(revision)
         version_and_revision: bytes = MsgPackForDB.dumps([version, revision])

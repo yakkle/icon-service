@@ -26,7 +26,7 @@ from ..base.exception import InvalidParamsException, MethodNotFoundException, Se
 from ..base.type_converter import TypeConverter, ParamType
 from ..base.type_converter_templates import ConstantKeys
 from ..icon_constant import IISS_MAX_DELEGATIONS, Revision, IISS_MIN_IREP, PREP_PENALTY_SIGNATURE, \
-    PenaltyReason
+    PenaltyReason, SLASH_RATES
 from ..icon_constant import PRepGrade, PRepResultState, PRepStatus
 from ..iconscore.icon_score_context import IconScoreContext
 from ..iconscore.icon_score_event_log import EventLogEmitter
@@ -691,6 +691,8 @@ class Engine(EngineBase, IISSEngineListener):
         dirty_prep.status = status
         dirty_prep.penalty = reason
         dirty_prep.grade = PRepGrade.CANDIDATE
+        if context.revision.value >= Revision.SLASHING and dirty_prep.status == PRepStatus.DISQUALIFIED:
+            dirty_prep.slash_rates = SLASH_RATES
         context.put_dirty_prep(dirty_prep)
 
         EventLogEmitter.emit_event_log(

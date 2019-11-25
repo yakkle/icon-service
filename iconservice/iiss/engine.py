@@ -20,6 +20,8 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Optional, List, Dict, Tuple, Union
 
 from iconcommons.logger import Logger
+
+from iconservice.prep.data import PRep
 from .reward_calc.data_creator import DataCreator as RewardCalcDataCreator
 from .reward_calc.ipc.message import CalculateDoneNotification, ReadyNotification
 from .reward_calc.ipc.reward_calc_proxy import RewardCalcProxy
@@ -27,7 +29,7 @@ from ..base.ComponentBase import EngineBase
 from ..base.address import Address
 from ..base.address import ZERO_SCORE_ADDRESS
 from ..base.exception import \
-    InvalidParamsException, InvalidRequestException, OutOfBalanceException, FatalException
+    InvalidParamsException, InvalidRequestException, OutOfBalanceException, FatalException, MethodNotAllowedException
 from ..base.type_converter import TypeConverter
 from ..base.type_converter_templates import ConstantKeys, ParamType
 from ..icon_constant import IISS_MAX_DELEGATIONS, ISCORE_EXCHANGE_RATE, IISS_MAX_REWARD_RATE, \
@@ -334,9 +336,9 @@ class Engine(EngineBase):
         sender: 'Address' = context.tx.origin
         cached_accounts: Dict['Address', Tuple['Account', int]] = OrderedDict()
 
-        # Convert setDelegation params
+        # Check and convert setDelegation params
         total_delegating, new_delegations = \
-            self._convert_params_of_set_delegation(params)
+            self._check_and_convert_params_of_set_delegation(context, params)
 
         # Check whether voting power is enough to delegate
         self._check_voting_power_is_enough(context, sender, total_delegating, cached_accounts)
@@ -358,8 +360,9 @@ class Engine(EngineBase):
             listener.on_set_delegation(context, updated_accounts)
 
     @classmethod
-    def _convert_params_of_set_delegation(cls,
-                                          params: dict) -> Tuple[int, List[Tuple['Address', int]]]:
+    def _check_and_convert_params_of_set_delegation(cls,
+                                                    context: 'IconScoreContext',
+                                                    params: dict) -> Tuple[int, List[Tuple['Address', int]]]:
         """Convert delegations format
 
         [{"address": "hxe7af5fcfd8dfc67530a01a0e403882687528dfcb", "value", "0xde0b6b3a7640000"}, ...] ->
@@ -368,7 +371,43 @@ class Engine(EngineBase):
         :param params: params of setDelegation JSON-RPC API request
         :return: total_delegating, (address, delegated)
         """
+        delegations: List[Dict[str, Union['Address', int]]] = cls._get_type_converted_delegations(params)
+        converted_delegations: List[Tuple['Address', int]] = []
+        delegated_addresses = set()
+        total_delegating: int = 0
 
+        for delegation in delegations:
+            address: 'Address' = delegation["address"]
+            value: int = delegation["value"]
+            cls._check_each_delegation(context, address, value, delegated_addresses)
+            delegated_addresses.add(address)
+
+            total_delegating += value
+            converted_delegations.append((address, value))
+
+        return total_delegating, converted_delegations
+
+    @classmethod
+    def _check_each_delegation(cls,
+                               context: 'IconScoreContext',
+                               address: 'Address', value: int, delegated_addresses: set):
+        assert isinstance(address, Address)
+        assert isinstance(value, int)
+
+        if value < 0:
+            raise InvalidParamsException(f"Invalid delegating amount: {value}")
+
+        if address in delegated_addresses:
+            raise InvalidParamsException(f"Duplicated address: {address}")
+
+        prep: Optional['PRep'] = context.preps.get_by_address(address)
+        if prep is not None and (prep.is_disqualified() or prep.is_unregistered()):
+            raise MethodNotAllowedException(f"It is impossible to set delegation "
+                                            f"to a slashed, disqualified, unregistered P-Rep."
+                                            f"address: {prep.address} status: {prep.status.name}")
+
+    @classmethod
+    def _get_type_converted_delegations(cls, params: dict):
         if len(params) == 1:
             delegations: Optional[List[Dict[str, str]]] = params[ConstantKeys.DELEGATIONS]
         elif len(params) == 0:
@@ -385,32 +424,7 @@ class Engine(EngineBase):
             raise InvalidParamsException(f"Delegations out of range: {len(delegations)}")
 
         ret_params: dict = TypeConverter.convert(params, ParamType.IISS_SET_DELEGATION)
-        delegations: List[Dict[str, Union['Address', int]]] = \
-            ret_params[ConstantKeys.DELEGATIONS]
-
-        total_delegating: int = 0
-        converted_delegations: List[Tuple['Address', int]] = []
-        delegated_addresses = set()
-
-        for delegation in delegations:
-            address: 'Address' = delegation["address"]
-            value: int = delegation["value"]
-            assert isinstance(address, Address)
-            assert isinstance(value, int)
-
-            if value < 0:
-                raise InvalidParamsException(f"Invalid delegating amount: {value}")
-
-            if address in delegated_addresses:
-                raise InvalidParamsException(f"Duplicated address: {address}")
-
-            delegated_addresses.add(address)
-
-            if value > 0:
-                total_delegating += value
-                converted_delegations.append((address, value))
-
-        return total_delegating, converted_delegations
+        return ret_params[ConstantKeys.DELEGATIONS]
 
     @classmethod
     def _check_voting_power_is_enough(cls,
@@ -454,6 +468,9 @@ class Engine(EngineBase):
 
         for address, old_delegated in old_delegations:
             assert old_delegated > 0
+            prep: Optional['PRep'] = context.preps.get_by_address(address)
+            if prep is not None and prep.is_disqualified():
+                raise MethodNotAllowedException("Fine is imposed. Pay a fine before setting delegation.")
 
             cached: Tuple['Account', int] = cached_accounts.get(address)
             if cached is None:
@@ -562,6 +579,10 @@ class Engine(EngineBase):
         account: 'Account' = context.storage.icx.get_account(context, address, Intent.ALL)
         delegation_list: list = []
         for address, value in account.delegations:
+            prep: Optional['PRep'] = context.preps.get_by_address(address)
+            if prep.is_disqualified():
+                fine: int = value * prep.slash_rates // IISS_MAX_REWARD_RATE
+                pass
             delegation_list.append({"address": address, "value": value})
 
         data = {

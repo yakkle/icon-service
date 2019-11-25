@@ -20,6 +20,8 @@ from collections import OrderedDict
 from typing import TYPE_CHECKING, Optional, List
 
 from iconcommons.logger import Logger
+
+from iconservice.icon_constant import Revision
 from iconservice.icx.issue.regulator import Regulator
 from .icon_score_mapper import IconScoreMapper
 from .icon_score_trace import Trace
@@ -136,7 +138,7 @@ class IconScoreContext(object):
         self.tx: Optional['Transaction'] = None
         self.msg: Optional['Message'] = None
         self.current_address: Optional['Address'] = None
-        self.revision: int = 0
+        self.revision: Optional['Revision'] = None
         self.block_batch: Optional['BlockBatch'] = None
         self.tx_batch: Optional['TransactionBatch'] = None
         self.rc_block_batch: list = []

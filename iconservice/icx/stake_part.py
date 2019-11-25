@@ -73,7 +73,7 @@ class StakePart(BasePart):
         self._stake += value
         self.set_dirty(True)
 
-    def subtract_stake(self, value: int):
+    def burn(self, value: int):
         assert self.is_set(BasePartState.COMPLETE)
 
         if value <= 0 or value > self._stake:

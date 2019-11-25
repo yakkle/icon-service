@@ -2041,6 +2041,7 @@ class IconServiceEngine(ContextContainer):
 
     @staticmethod
     def _is_need_to_recover_rc_db(wal_state: 'WALState', is_calc_period_start_block: bool) -> bool:
+        # Todo: Duprecated check
         if wal_state & WALState.WRITE_RC_DB:
             if not is_calc_period_start_block or \
                     (is_calc_period_start_block and wal_state & WALState.SEND_CALCULATE):

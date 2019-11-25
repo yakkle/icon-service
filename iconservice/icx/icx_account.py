@@ -164,10 +164,10 @@ class Account(object):
             self.coin_part.toggle_has_unstake(True)
             self.stake_part.set_unstake(unlock_block_height,  self.total_stake - value)
 
-    def subtract_stake(self, value: int):
+    def burn_from_staked(self, value: int):
         if self.stake_part is None:
             raise InvalidParamsException('Failed to stake: InvalidAccount')
-        self.stake_part.subtract_stake(value)
+        self.stake_part.burn(value)
 
     def update_delegated_amount(self, offset: int):
         if self.delegation_part is None:

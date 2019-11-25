@@ -116,6 +116,7 @@ class Revision(Enum):
     IISS = auto()
     DECENTRALIZATION = auto()
     IS_1_5_16 = auto()
+    SLASHING = auto()
 
     LATEST = auto()
 
@@ -275,9 +276,13 @@ PREP_MAIN_PREPS = 22
 PREP_MAIN_AND_SUB_PREPS = 100
 
 IISS_MAX_REWARD_RATE = 10_000
+IISS_MAX_SLASH_RATE = 10_000
 IISS_MIN_IREP = 10_000 * ICX_IN_LOOP
 IISS_MAX_IREP_PERCENTAGE = 14
 IISS_INITIAL_IREP = 50_000 * ICX_IN_LOOP
+
+
+SLASH_RATES = 600
 
 # 24 hours * 60 minutes * 60 seconds / 2 - 80 <- for PRep terms
 TERM_PERIOD = 24 * 60 * 60 // 2 - 80
