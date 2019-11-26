@@ -33,7 +33,7 @@ from ..base.exception import \
 from ..base.type_converter import TypeConverter
 from ..base.type_converter_templates import ConstantKeys, ParamType
 from ..icon_constant import IISS_MAX_DELEGATIONS, ISCORE_EXCHANGE_RATE, IISS_MAX_REWARD_RATE, \
-    IconScoreContextType, IISS_LOG_TAG, RCCalculateResult, INVALID_CLAIM_TX, Revision
+    IconScoreContextType, IISS_LOG_TAG, RCCalculateResult, INVALID_CLAIM_TX, Revision, IISS_MAX_SLASH_RATE
 from ..iconscore.icon_score_context import IconScoreContext
 from ..iconscore.icon_score_event_log import EventLogEmitter
 from ..icx import Intent
@@ -469,7 +469,7 @@ class Engine(EngineBase):
         for address, old_delegated in old_delegations:
             assert old_delegated > 0
             prep: Optional['PRep'] = context.preps.get_by_address(address)
-            if prep is not None and prep.is_disqualified():
+            if prep is not None and prep.is_disqualified() and prep.slash_rates > 0:
                 raise MethodNotAllowedException("Fine is imposed. Pay a fine before setting delegation.")
 
             cached: Tuple['Account', int] = cached_accounts.get(address)
@@ -578,18 +578,26 @@ class Engine(EngineBase):
 
         account: 'Account' = context.storage.icx.get_account(context, address, Intent.ALL)
         delegation_list: list = []
+        total_fine: int = 0
+        status: bool = False
         for address, value in account.delegations:
+            delegation: dict = {"address": address, "value": value}
             prep: Optional['PRep'] = context.preps.get_by_address(address)
-            if prep.is_disqualified():
-                fine: int = value * prep.slash_rates // IISS_MAX_REWARD_RATE
-                pass
-            delegation_list.append({"address": address, "value": value})
+            if prep is not None and prep.is_disqualified() and prep.slash_rates > 0:
+                fine: int = value * prep.slash_rates // IISS_MAX_SLASH_RATE
+                delegation["fined"] = fine
+                total_fine += fine
+                status: bool = True if status is False else status
+            delegation_list.append(delegation)
 
         data = {
+            "status": status,
             "delegations": delegation_list,
             "totalDelegated": account.delegations_amount,
             "votingPower": account.voting_power
         }
+        if total_fine > 0:
+            data["totalFined"] = total_fine
 
         return data
 
