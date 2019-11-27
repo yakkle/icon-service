@@ -131,7 +131,7 @@ class Engine(EngineBase):
                                        indexed_args_count=0)
 
     @staticmethod
-    def burn_staked_icx(context: 'IconScoreContext', address: 'Address', amount: int):
+    def _burn_staked_icx(context: 'IconScoreContext', address: 'Address', amount: int):
         account: 'Account' = context.storage.icx.get_account(context, address, Intent.STAKE)
         total_stake: int = context.storage.iiss.get_total_stake(context)
         current_total_supply: int = context.storage.icx.get_total_supply(context)
@@ -144,8 +144,10 @@ class Engine(EngineBase):
         context.storage.iiss.put_total_stake(context, total_stake)
         context.storage.icx.put_total_supply(context, burned_total_supply)
 
+    def burn_staked_icx(self, context: 'IconScoreContext', address: 'Address', amount: int):
+        self._burn_staked_icx(context, address, amount)
         EventLogEmitter.emit_event_log(context,
                                        score_address=ZERO_SCORE_ADDRESS,
-                                       event_signature="StakedICXBurned",
-                                       arguments=[address, amount],
+                                       event_signature="ICXBurned",
+                                       arguments=[amount],
                                        indexed_args_count=0)

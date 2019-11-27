@@ -76,8 +76,8 @@ class StakePart(BasePart):
     def burn(self, value: int):
         assert self.is_set(BasePartState.COMPLETE)
 
-        if value <= 0 or value > self._stake:
-            raise InvalidParamsException("Failed to stake: value <= 0 or value > stake amount")
+        if not 0 <= value <= self._stake:
+            raise InvalidParamsException("Failed to stake: value < 0 or value > stake amount")
 
         self._stake -= value
         self.set_dirty(True)
