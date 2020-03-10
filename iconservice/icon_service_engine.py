@@ -45,7 +45,7 @@ from .icon_constant import (
     IISS_METHOD_TABLE, PREP_METHOD_TABLE, NEW_METHOD_TABLE, Revision, BASE_TRANSACTION_INDEX,
     IISS_DB, IISS_INITIAL_IREP, DEBUG_METHOD_TABLE, PREP_MAIN_PREPS, PREP_MAIN_AND_SUB_PREPS,
     ISCORE_EXCHANGE_RATE, STEP_LOG_TAG, TERM_PERIOD, BlockVoteStatus, WAL_LOG_TAG, ROLLBACK_LOG_TAG,
-    BLOCK_INVOKE_TIMEOUT_S
+    BLOCK_INVOKE_TIMEOUT_S, BLOCK_INVOKE_TX_COUNT
 )
 from .iconscore.icon_pre_validator import IconPreValidator
 from .iconscore.icon_score_class_loader import IconScoreClassLoader
@@ -115,6 +115,7 @@ class IconServiceEngine(ContextContainer):
         self._backup_cleaner: Optional[BackupCleaner] = None
         self._conf: Optional[Dict[str, Union[str, int]]] = None
         self._block_invoke_timeout_s: int = BLOCK_INVOKE_TIMEOUT_S
+        self._block_invoke_tx_count: int = BLOCK_INVOKE_TX_COUNT
 
         # JSON-RPC handlers
         self._handlers = {
@@ -219,6 +220,7 @@ class IconServiceEngine(ContextContainer):
         self._init_global_value_by_governance_score(context)
 
         self._set_block_invoke_timeout(conf)
+        self._set_block_invoke_tx_count(conf)
 
         # DO NOT change the values in conf
         self._conf = conf
@@ -534,12 +536,11 @@ class IconServiceEngine(ContextContainer):
             for index, tx_request in enumerate(tx_requests):
                 # Adjust the number of transactions in a block to make sure that
                 # a leader can broadcast a block candidate to validators in a specific period.
-                if is_block_editable:
-                    if tx_timer.duration >= self._block_invoke_timeout_s:
-                        Logger.info(
-                            tag=self.TAG,
-                            msg=f"Stop to invoke remaining transactions: {index} / {len(tx_requests)}")
-                        break
+                if not self._continue_to_invoke(context, index, tx_timer):
+                    Logger.info(
+                        tag=self.TAG,
+                        msg=f"Stop to invoke remaining transactions: {index} / {len(tx_requests)}")
+                    break
 
                 if index == BASE_TRANSACTION_INDEX and context.is_decentralized():
                     if not tx_request['params'].get('dataType') == "base":
@@ -2414,3 +2415,42 @@ class IconServiceEngine(ContextContainer):
             pass
 
         Logger.info(tag=self.TAG, msg=f"{ConfigKey.BLOCK_INVOKE_TIMEOUT}: {self._block_invoke_timeout_s}")
+
+    def _set_block_invoke_tx_count(self, conf: Dict[str, Union[str, int]]):
+        try:
+            tx_count: int = conf.get(ConfigKey.BLOCK_INVOKE_TX_COUNT, BLOCK_INVOKE_TX_COUNT)
+            if isinstance(tx_count, int):
+                self._block_invoke_tx_count = max(tx_count, 0)
+        except:
+            pass
+
+        Logger.info(tag=self.TAG, msg=f"{ConfigKey.BLOCK_INVOKE_TX_COUNT}: {self._block_invoke_tx_count}")
+
+    def _continue_to_invoke(self, context: 'IconScoreContext', tx_index: int, tx_timer: 'Timer') -> bool:
+
+        if not is_block_editable:
+            return True
+
+        block_invoke_tx_count = self._block_invoke_tx_count
+        if context.is_decentralized():
+            # A base transaction is added
+            block_invoke_tx_count += 1
+
+        if block_invoke_tx_count > 1:
+            if tx_index >= block_invoke_tx_count:
+                Logger.info(
+                    tag=self.TAG,
+                    msg=f"Stop transaction invoking: "
+                        f"tx_index={tx_index} block_invoke_tx_count={block_invoke_tx_count}"
+                )
+                return False
+        else:
+            if tx_timer.duration >= self._block_invoke_timeout_s:
+                Logger.info(
+                    tag=self.TAG,
+                    msg=f"Stop transaction invoking: "
+                        f"duration={tx_timer.duration} block_invoke_timeout={self._block_invoke_timeout_s}"
+                )
+                return False
+
+        return True

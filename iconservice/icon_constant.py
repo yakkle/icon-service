@@ -187,6 +187,7 @@ class ConfigKey:
 
     # Block invoke timeout in second
     BLOCK_INVOKE_TIMEOUT = "blockInvokeTimeout"
+    BLOCK_INVOKE_TX_COUNT = "blockInvokeTxCount"
 
 
 class EnableThreadFlag(IntFlag):
@@ -310,6 +311,7 @@ PREP_PENALTY_SIGNATURE = "PenaltyImposed(Address,int,int)"
 BACKUP_FILES = 10
 
 BLOCK_INVOKE_TIMEOUT_S = 15
+BLOCK_INVOKE_TX_COUNT = 0  # Unlimited
 
 
 class RCStatus(IntEnum):
