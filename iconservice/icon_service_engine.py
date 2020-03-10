@@ -536,7 +536,7 @@ class IconServiceEngine(ContextContainer):
             for index, tx_request in enumerate(tx_requests):
                 # Adjust the number of transactions in a block to make sure that
                 # a leader can broadcast a block candidate to validators in a specific period.
-                if not self._continue_to_invoke(context, index, tx_timer):
+                if is_block_editable and not self._continue_to_invoke(context, index, tx_timer):
                     Logger.info(
                         tag=self.TAG,
                         msg=f"Stop to invoke remaining transactions: {index} / {len(tx_requests)}")
@@ -2427,10 +2427,14 @@ class IconServiceEngine(ContextContainer):
         Logger.info(tag=self.TAG, msg=f"{ConfigKey.BLOCK_INVOKE_TX_COUNT}: {self._block_invoke_tx_count}")
 
     def _continue_to_invoke(self, context: 'IconScoreContext', tx_index: int, tx_timer: 'Timer') -> bool:
+        """If this is a block created by a leader,
+        check to continue transaction invoking with block_invoke_tx_count or block_invoke_timeout
 
-        if not is_block_editable:
-            return True
-
+        :param context:
+        :param tx_index:
+        :param tx_timer:
+        :return:
+        """
         block_invoke_tx_count = self._block_invoke_tx_count
         if context.is_decentralized():
             # A base transaction is added
