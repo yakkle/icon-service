@@ -1,10 +1,10 @@
 from iconservice import *
 
-# аж╪╝ а╬╥Ы╣╣ ©╘╥╞╟Ё╥н гоюз
+# М∙°Й╣╜Л√╢ Лё╪Л└²
 
 
 class TestScore(IconScoreBase):
-    """гя╠ш╥н аж╪╝ю╩ ╢ч╦И ╧╚╫╪ юоюл ╧ъ╩Щгр╠Н?
+    """М∙°Й╣╜Л√╢ Лё╪Л└²
     """
 
     @eventlog(indexed=1)
